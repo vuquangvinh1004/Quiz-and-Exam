@@ -1,0 +1,404 @@
+"""SQLAlchemy ORM models for Quiz Desktop App.
+
+Schema source of truth: QUIZ_APP_ARCHITECTURE.md §8.
+Do not alter column names or constraints without creating an Alembic migration.
+
+Eight tables:
+    question_banks, questions, question_options,
+    quizzes, quiz_questions,
+    attempts, attempt_answers,
+    app_settings
+"""
+from __future__ import annotations
+
+import json
+from datetime import datetime
+from typing import Optional
+
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    """Shared declarative base for all ORM models."""
+
+
+# ---------------------------------------------------------------------------
+# question_banks
+# ---------------------------------------------------------------------------
+
+class QuestionBank(Base):
+    """Stores question bank records (folders grouping questions)."""
+
+    __tablename__ = "question_banks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    # Optional metadata used to pre-fill the exam export form
+    school: Mapped[Optional[str]] = mapped_column(Text)
+    department: Mapped[Optional[str]] = mapped_column(Text)
+    subject: Mapped[Optional[str]] = mapped_column(Text)
+    course_code: Mapped[Optional[str]] = mapped_column(Text)
+    exam_title: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+    questions: Mapped[list["Question"]] = relationship(
+        "Question", back_populates="bank", cascade="all, delete-orphan"
+    )
+    quizzes: Mapped[list["Quiz"]] = relationship(
+        "Quiz", back_populates="bank", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return f"<QuestionBank id={self.id} name={self.name!r}>"
+
+
+# ---------------------------------------------------------------------------
+# questions
+# ---------------------------------------------------------------------------
+
+class Question(Base):
+    """Stores individual questions in a question bank."""
+
+    __tablename__ = "questions"
+    __table_args__ = (
+        CheckConstraint(
+            "question_type IN ('MC', 'MA', 'BLANK', 'SA')",
+            name="ck_questions_type",
+        ),
+        Index("ix_questions_bank_id", "bank_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    bank_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("question_banks.id", ondelete="CASCADE"), nullable=False
+    )
+    question_code: Mapped[Optional[str]] = mapped_column(Text, unique=True)
+    question_type: Mapped[str] = mapped_column(Text, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    hint: Mapped[Optional[str]] = mapped_column(Text)
+    explanation: Mapped[Optional[str]] = mapped_column(Text)
+    difficulty: Mapped[Optional[str]] = mapped_column(Text)
+    category: Mapped[Optional[str]] = mapped_column(Text)
+    tags: Mapped[Optional[str]] = mapped_column(Text)
+    # JSON string for BLANK/SA accepted answers; NULL for MC/MA
+    accepted_answers: Mapped[Optional[str]] = mapped_column(Text)
+    point_value: Mapped[float] = mapped_column(Float, default=1.0)
+    case_sensitive: Mapped[bool] = mapped_column(Boolean, default=False)
+    trim_whitespace: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+    bank: Mapped["QuestionBank"] = relationship("QuestionBank", back_populates="questions")
+    options: Mapped[list["QuestionOption"]] = relationship(
+        "QuestionOption", back_populates="question", cascade="all, delete-orphan",
+        order_by="QuestionOption.sort_order",
+    )
+
+    def get_accepted_answers(self) -> list[str]:
+        """Deserialize JSON accepted_answers field into a Python list."""
+        if not self.accepted_answers:
+            return []
+        return json.loads(self.accepted_answers)
+
+    def set_accepted_answers(self, answers: list[str]) -> None:
+        """Serialize and store accepted answers as JSON."""
+        self.accepted_answers = json.dumps(answers, ensure_ascii=False)
+
+    def __repr__(self) -> str:
+        return f"<Question id={self.id} type={self.question_type} code={self.question_code!r}>"
+
+
+# ---------------------------------------------------------------------------
+# question_options
+# ---------------------------------------------------------------------------
+
+class QuestionOption(Base):
+    """Stores answer options for MC and MA questions."""
+
+    __tablename__ = "question_options"
+    __table_args__ = (
+        UniqueConstraint("question_id", "option_key", name="uq_question_options_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    question_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("questions.id", ondelete="CASCADE"), nullable=False
+    )
+    option_key: Mapped[str] = mapped_column(Text, nullable=False)  # A, B, C, D, E, F
+    option_text: Mapped[str] = mapped_column(Text, nullable=False)
+    is_correct: Mapped[bool] = mapped_column(Boolean, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    question: Mapped["Question"] = relationship("Question", back_populates="options")
+
+    def __repr__(self) -> str:
+        return (
+            f"<QuestionOption id={self.id} key={self.option_key} "
+            f"correct={self.is_correct}>"
+        )
+
+
+# ---------------------------------------------------------------------------
+# quizzes
+# ---------------------------------------------------------------------------
+
+class Quiz(Base):
+    """Stores quiz configurations created by the user."""
+
+    __tablename__ = "quizzes"
+    __table_args__ = (
+        CheckConstraint(
+            "mode IN ('EXAM', 'PRACTICE', 'STUDY')", name="ck_quizzes_mode"
+        ),
+        Index("ix_quizzes_bank_id", "bank_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    bank_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("question_banks.id", ondelete="CASCADE"), nullable=False
+    )
+    mode: Mapped[str] = mapped_column(Text, nullable=False)
+    time_limit_minutes: Mapped[Optional[int]] = mapped_column(Integer)
+    shuffle_questions: Mapped[bool] = mapped_column(Boolean, default=True)
+    shuffle_options: Mapped[bool] = mapped_column(Boolean, default=True)
+    show_hint_in_practice: Mapped[bool] = mapped_column(Boolean, default=True)
+    show_explanation_in_study: Mapped[bool] = mapped_column(Boolean, default=True)
+    total_questions: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+    bank: Mapped["QuestionBank"] = relationship("QuestionBank", back_populates="quizzes")
+    quiz_questions: Mapped[list["QuizQuestion"]] = relationship(
+        "QuizQuestion", back_populates="quiz", cascade="all, delete-orphan",
+        order_by="QuizQuestion.question_order",
+    )
+    attempts: Mapped[list["Attempt"]] = relationship(
+        "Attempt", back_populates="quiz", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Quiz id={self.id} title={self.title!r} mode={self.mode}>"
+
+
+# ---------------------------------------------------------------------------
+# quiz_questions  (snapshot)
+# ---------------------------------------------------------------------------
+
+class QuizQuestion(Base):
+    """Snapshot of each question as it was when the quiz was created."""
+
+    __tablename__ = "quiz_questions"
+    __table_args__ = (
+        UniqueConstraint("quiz_id", "question_order", name="uq_quiz_questions_order"),
+        Index("ix_quiz_questions_question_id", "question_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    quiz_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("quizzes.id", ondelete="CASCADE"), nullable=False
+    )
+    question_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("questions.id", ondelete="CASCADE"), nullable=False
+    )
+    question_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    snapshot_content: Mapped[str] = mapped_column(Text, nullable=False)
+    snapshot_type: Mapped[str] = mapped_column(Text, nullable=False)
+    snapshot_hint: Mapped[Optional[str]] = mapped_column(Text)
+    snapshot_explanation: Mapped[Optional[str]] = mapped_column(Text)
+    snapshot_point_value: Mapped[float] = mapped_column(Float, default=1.0)
+    # JSON string – serialized list of {key, text, is_correct}
+    snapshot_options: Mapped[Optional[str]] = mapped_column(Text)
+    # JSON string – list of accepted answer strings (for BLANK/SA)
+    snapshot_accepted_answers: Mapped[Optional[str]] = mapped_column(Text)
+
+    quiz: Mapped["Quiz"] = relationship("Quiz", back_populates="quiz_questions")
+    attempt_answers: Mapped[list["AttemptAnswer"]] = relationship(
+        "AttemptAnswer", back_populates="quiz_question", cascade="all, delete-orphan"
+    )
+
+    def get_snapshot_options(self) -> list[dict]:
+        """Deserialize snapshot_options JSON."""
+        if not self.snapshot_options:
+            return []
+        return json.loads(self.snapshot_options)
+
+    def get_snapshot_accepted_answers(self) -> list[str]:
+        """Deserialize snapshot_accepted_answers JSON (back-compat: list or dict)."""
+        if not self.snapshot_accepted_answers:
+            return []
+        data = json.loads(self.snapshot_accepted_answers)
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            return data.get("answers", [])
+        return []
+
+    def get_snapshot_answer_config(self) -> dict:
+        """Return {case_sensitive, trim_whitespace} for BLANK/SA questions.
+
+        Encoded as a JSON dict in snapshot_accepted_answers by QuizService.
+        Falls back to safe defaults when not present.
+        """
+        if not self.snapshot_accepted_answers:
+            return {"case_sensitive": False, "trim_whitespace": True}
+        data = json.loads(self.snapshot_accepted_answers)
+        if isinstance(data, dict):
+            return {
+                "case_sensitive": data.get("case_sensitive", False),
+                "trim_whitespace": data.get("trim_whitespace", True),
+            }
+        return {"case_sensitive": False, "trim_whitespace": True}
+
+    def __repr__(self) -> str:
+        return (
+            f"<QuizQuestion id={self.id} quiz={self.quiz_id} "
+            f"order={self.question_order}>"
+        )
+
+
+# ---------------------------------------------------------------------------
+# attempts
+# ---------------------------------------------------------------------------
+
+class Attempt(Base):
+    """Records a single quiz session by a user."""
+
+    __tablename__ = "attempts"
+    __table_args__ = (
+        CheckConstraint(
+            "mode IN ('EXAM', 'PRACTICE', 'STUDY')", name="ck_attempts_mode"
+        ),
+        CheckConstraint(
+            "status IN ('IN_PROGRESS', 'SUBMITTED', 'TIME_UP', 'COMPLETED')",
+            name="ck_attempts_status",
+        ),
+        Index("ix_attempts_quiz_id", "quiz_id"),
+        Index("ix_attempts_started_at", "started_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    quiz_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("quizzes.id", ondelete="CASCADE"), nullable=False
+    )
+    mode: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="IN_PROGRESS")
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    duration_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    answered_count: Mapped[int] = mapped_column(Integer, default=0)
+    correct_count: Mapped[int] = mapped_column(Integer, default=0)
+    incorrect_count: Mapped[int] = mapped_column(Integer, default=0)
+    skipped_count: Mapped[int] = mapped_column(Integer, default=0)
+    score: Mapped[float] = mapped_column(Float, default=0.0)
+    max_score: Mapped[float] = mapped_column(Float, default=0.0)
+    remaining_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    extra_data: Mapped[Optional[str]] = mapped_column(Text)  # JSON blob (renamed from metadata)
+
+    quiz: Mapped["Quiz"] = relationship("Quiz", back_populates="attempts")
+    answers: Mapped[list["AttemptAnswer"]] = relationship(
+        "AttemptAnswer", back_populates="attempt", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Attempt id={self.id} quiz={self.quiz_id} status={self.status}>"
+
+
+# ---------------------------------------------------------------------------
+# attempt_answers
+# ---------------------------------------------------------------------------
+
+class AttemptAnswer(Base):
+    """Stores the user's answer for each question in an attempt."""
+
+    __tablename__ = "attempt_answers"
+    __table_args__ = (
+        UniqueConstraint(
+            "attempt_id", "quiz_question_id", name="uq_attempt_answers_question"
+        ),
+        Index("ix_attempt_answers_quiz_question_id", "quiz_question_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    attempt_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("attempts.id", ondelete="CASCADE"), nullable=False
+    )
+    quiz_question_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("quiz_questions.id", ondelete="CASCADE"), nullable=False
+    )
+    # JSON string e.g. {"selected":"B"} or {"text":"EOQ"} – see ARCHITECTURE §8.4
+    answer_payload: Mapped[Optional[str]] = mapped_column(Text)
+    is_answered: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_correct: Mapped[Optional[bool]] = mapped_column(Boolean)
+    score_awarded: Mapped[float] = mapped_column(Float, default=0.0)
+    # One of: 'correct', 'incorrect', 'skipped', 'pending'
+    feedback_state: Mapped[Optional[str]] = mapped_column(Text)
+    answered_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+    attempt: Mapped["Attempt"] = relationship("Attempt", back_populates="answers")
+    quiz_question: Mapped["QuizQuestion"] = relationship(
+        "QuizQuestion", back_populates="attempt_answers"
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<AttemptAnswer id={self.id} attempt={self.attempt_id} "
+            f"qq={self.quiz_question_id} correct={self.is_correct}>"
+        )
+
+
+# ---------------------------------------------------------------------------
+# app_settings
+# ---------------------------------------------------------------------------
+
+class AppSetting(Base):
+    """Key-value table for persistent application settings."""
+
+    __tablename__ = "app_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    setting_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    setting_value: Mapped[Optional[str]] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AppSetting {self.setting_key}={self.setting_value!r}>"

@@ -1,0 +1,35 @@
+# Pre-commit hooks for quiz_desktop_app
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # ── Ruff: linting + import sorting ──────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        args: [--fix]          # auto-fix safe issues
+      - id: ruff-format        # formatter (replaces black)
+
+  # ── Basic file hygiene ──────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: debug-statements      # catch leftover pdb / breakpoint()
+      - id: check-added-large-files
+        args: [--maxkb=500]
+
+  # ── Pytest fast-fail (unit tests only, no Qt) ───────────────────────────
+  - repo: local
+    hooks:
+      - id: pytest-unit
+        name: pytest (unit tests)
+        language: system
+        entry: python -m pytest tests/unit/ -q --tb=short
+        pass_filenames: false
+        always_run: true
