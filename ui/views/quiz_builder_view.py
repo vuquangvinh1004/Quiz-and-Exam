@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QCheckBox,
@@ -25,13 +24,11 @@ from PySide6.QtWidgets import (
 from core.database.models import Question
 from core.database.session import get_session
 from modules.quiz_builder.quota_allocator import (
-    QuotaPlan,
     build_inventory,
     chapter_key,
-    validate_quota_plan,
 )
 from modules.quiz_builder.selector import QuestionSelector
-from ui.views.quiz_builder_batch import run_batch_generation
+from ui.views.quiz_builder_quota_support import refresh_quota_warnings, sync_quota_availability
 from ui.dialogs.question_pool_picker_dialog import QuestionPoolPickerDialog
 from ui.styles import apply_checkbox_style
 from ui.widgets.bank_combo import BankCombo
@@ -58,6 +55,9 @@ class QuizBuilderView(QWidget):
         self._chapter_spins: dict[str, QSpinBox] = {}
         self._type_spins: dict[str, QSpinBox] = {}
         self._difficulty_spins: dict[str, QSpinBox] = {}
+        self._chapter_available: dict[str, QTableWidgetItem] = {}
+        self._type_available: dict[str, QTableWidgetItem] = {}
+        self._difficulty_available: dict[str, QTableWidgetItem] = {}
 
         self._build_ui()
 
@@ -85,14 +85,6 @@ class QuizBuilderView(QWidget):
 
         self._export_panel = ExamExportPanel(self._selector, self._get_selection_state)
         root.addWidget(self._export_panel)
-
-        action_row = QHBoxLayout()
-        self._generate_btn = QPushButton("🧩 Tạo nhiều đề thi (.docx)")
-        self._generate_btn.setFixedHeight(42)
-        self._generate_btn.clicked.connect(self._on_generate_batch)
-        action_row.addWidget(self._generate_btn)
-        action_row.addStretch()
-        root.addLayout(action_row)
         root.addStretch()
 
         self._load_banks()
@@ -207,8 +199,8 @@ class QuizBuilderView(QWidget):
         layout = QVBoxLayout(box)
 
         help_lbl = QLabel(
-            "Mỗi nhóm quota (Chương / Loại / Độ khó) phải có tổng bằng số câu mỗi đề. "
-            "Ô vượt quá nguồn hiện có sẽ được tô nền đỏ."
+            "Chỉ xét các quota bạn nhập (Chương / Loại / Độ khó). "
+            "Bảng quota để trống sẽ được bỏ qua; tổng quota của mỗi bảng không được vượt số câu mỗi đề."
         )
         help_lbl.setWordWrap(True)
         help_lbl.setObjectName("muted_label")
@@ -230,14 +222,16 @@ class QuizBuilderView(QWidget):
         return box
 
     def _build_quota_table(self) -> QTableWidget:
-        table = QTableWidget(0, 2)
-        table.setHorizontalHeaderLabels(["Nhóm", "Số lượng"])
+        table = QTableWidget(0, 3)
+        table.setHorizontalHeaderLabels(["Nhóm", "Sẵn có", "Số lượng"])
         table.verticalHeader().setVisible(False)
         table.verticalHeader().setDefaultSectionSize(38)
         table.setColumnWidth(0, 170)
-        table.setColumnWidth(1, 150)
+        table.setColumnWidth(1, 90)
+        table.setColumnWidth(2, 150)
         table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
         table.setMinimumHeight(235)
         table.setMaximumHeight(285)
         return table
@@ -318,6 +312,7 @@ class QuizBuilderView(QWidget):
         self._count_spin.setMaximum(max(1, available))
 
         self._reload_chapter_quota_rows(questions)
+        self._sync_quota_availability(questions)
         self._refresh_quota_warnings(questions)
 
     def _open_pool_picker(self) -> None:
@@ -346,37 +341,62 @@ class QuizBuilderView(QWidget):
             ("BLANK", "Blank"),
             ("SA", "SA"),
         ):
-            self._type_spins[key] = self._append_quota_row(self._type_table, label)
+            spin, available_item = self._append_quota_row(self._type_table, label)
+            self._type_spins[key] = spin
+            self._type_available[key] = available_item
 
     def _init_difficulty_quota_rows(self) -> None:
         for key, label in (("easy", "Easy"), ("medium", "Medium"), ("hard", "Hard")):
-            self._difficulty_spins[key] = self._append_quota_row(self._difficulty_table, label)
+            spin, available_item = self._append_quota_row(self._difficulty_table, label)
+            self._difficulty_spins[key] = spin
+            self._difficulty_available[key] = available_item
 
     def _reload_chapter_quota_rows(self, questions: list[Question]) -> None:
         old_values = {name: spin.value() for name, spin in self._chapter_spins.items()}
         self._chapter_spins.clear()
+        self._chapter_available.clear()
         self._chapter_table.setRowCount(0)
 
+        inv = build_inventory(questions)
         chapters = sorted({chapter_key(q.category) for q in questions})
         for chap in chapters:
-            spin = self._append_quota_row(self._chapter_table, chap)
-            spin.setValue(old_values.get(chap, 0))
+            spin, available_item = self._append_quota_row(
+                self._chapter_table,
+                chap,
+                available=inv.by_chapter.get(chap, 0),
+            )
+            spin.setValue(min(old_values.get(chap, 0), spin.maximum()))
             self._chapter_spins[chap] = spin
+            self._chapter_available[chap] = available_item
 
-    def _append_quota_row(self, table: QTableWidget, label: str) -> QSpinBox:
+    def _append_quota_row(
+        self,
+        table: QTableWidget,
+        label: str,
+        *,
+        available: int = 0,
+    ) -> tuple[QSpinBox, QTableWidgetItem]:
         row = table.rowCount()
         table.insertRow(row)
         table.setItem(row, 0, QTableWidgetItem(label))
 
+        available_item = QTableWidgetItem(str(available))
+        available_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        available_item.setFlags(available_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        table.setItem(row, 1, available_item)
+
         spin = QSpinBox()
         spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-        spin.setRange(0, 100000)
+        spin.setRange(0, max(0, available))
         spin.setMinimumWidth(140)
         spin.setFixedHeight(30)
-        spin.setAlignment(Qt.AlignmentFlag.AlignRight)
+        spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
         spin.valueChanged.connect(self._refresh_quota_warnings)
-        table.setCellWidget(row, 1, spin)
-        return spin
+        table.setCellWidget(row, 2, spin)
+        return spin, available_item
+
+    def _sync_quota_availability(self, questions: list[Question]) -> None:
+        sync_quota_availability(self, questions)
 
     def _quota_dict(self, source: dict[str, QSpinBox]) -> dict[str, int]:
         return {
@@ -394,85 +414,23 @@ class QuizBuilderView(QWidget):
             "QSpinBox QLineEdit { background-color: #f8d7da; }"
         )
 
-    def _set_table_row_warning(self, table: QTableWidget, spin: QSpinBox, warning: bool) -> None:
-        for row in range(table.rowCount()):
-            if table.cellWidget(row, 1) is not spin:
-                continue
-            color = QColor("#fdecea") if warning else QColor()
-            for col in (0, 1):
-                item = table.item(row, col)
-                if item is not None:
-                    item.setBackground(color)
-            break
-
     def _refresh_quota_warnings(self, value_or_questions: object | None = None) -> None:
-        questions: list[Question] | None = value_or_questions if isinstance(value_or_questions, list) else None
-        if questions is None:
-            questions = self._eligible_questions()
-
-        for spin in self._chapter_spins.values():
-            self._clear_spin_warning(spin)
-            self._set_table_row_warning(self._chapter_table, spin, False)
-        for spin in self._type_spins.values():
-            self._clear_spin_warning(spin)
-            self._set_table_row_warning(self._type_table, spin, False)
-        for spin in self._difficulty_spins.values():
-            self._clear_spin_warning(spin)
-            self._set_table_row_warning(self._difficulty_table, spin, False)
-
-        plan = QuotaPlan(
-            total_questions=self._count_spin.value(),
-            chapter_quota=self._quota_dict(self._chapter_spins),
-            type_quota=self._quota_dict(self._type_spins),
-            difficulty_quota=self._quota_dict(self._difficulty_spins),
-        )
-        inv = build_inventory(questions)
-        result = validate_quota_plan(plan, inv)
-
-        for key in result.chapter_overflow:
-            spin = self._chapter_spins.get(key)
-            if spin:
-                self._mark_spin_warning(spin)
-                self._set_table_row_warning(self._chapter_table, spin, True)
-        for key in result.type_overflow:
-            spin = self._type_spins.get(key)
-            if spin:
-                self._mark_spin_warning(spin)
-                self._set_table_row_warning(self._type_table, spin, True)
-        for key in result.difficulty_overflow:
-            spin = self._difficulty_spins.get(key)
-            if spin:
-                self._mark_spin_warning(spin)
-                self._set_table_row_warning(self._difficulty_table, spin, True)
-
-        if sum(plan.chapter_quota.values()) != plan.total_questions:
-            for spin in self._chapter_spins.values():
-                if spin.value() > 0:
-                    self._mark_spin_warning(spin)
-                    self._set_table_row_warning(self._chapter_table, spin, True)
-        if sum(plan.type_quota.values()) != plan.total_questions:
-            for spin in self._type_spins.values():
-                if spin.value() > 0:
-                    self._mark_spin_warning(spin)
-                    self._set_table_row_warning(self._type_table, spin, True)
-        if sum(plan.difficulty_quota.values()) != plan.total_questions:
-            for spin in self._difficulty_spins.values():
-                if spin.value() > 0:
-                    self._mark_spin_warning(spin)
-                    self._set_table_row_warning(self._difficulty_table, spin, True)
-
-    def _on_generate_batch(self) -> None:
-        # Typed contract remains enforced in batch helper via build_creation_snapshots(...)
-        run_batch_generation(self)
+        refresh_quota_warnings(self, value_or_questions)
 
     def _get_selection_state(self) -> ExportSelectionState:
         return ExportSelectionState(
             bank_id=self._current_bank_id(),
+            exam_count=self._exam_count_spin.value(),
             question_count=self._count_spin.value(),
             question_types=self._selected_types(),
             difficulties=self._selected_difficulties(),
+            candidate_question_ids=list(self._selected_question_ids),
+            chapter_quota=self._quota_dict(self._chapter_spins),
+            type_quota=self._quota_dict(self._type_spins),
+            difficulty_quota=self._quota_dict(self._difficulty_spins),
             shuffle_questions=self._cb_shuffle_q.isChecked(),
             shuffle_options=self._cb_shuffle_opts.isChecked(),
+            no_repeat_between_exams=self._cb_no_repeat_between_exams.isChecked(),
             time_limit_minutes=self._duration_spin.value(),
         )
 

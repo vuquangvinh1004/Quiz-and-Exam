@@ -6,6 +6,7 @@ while this panel handles document metadata and rendering.
 from __future__ import annotations
 
 import os
+import random
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -34,6 +35,13 @@ from PySide6.QtWidgets import (
 
 from config.paths import EXPORTS_DIR
 from core.database.session import get_session
+from modules.quiz_builder.quota_allocator import (
+    QuotaPlan,
+    allocate_questions_for_plan,
+    build_inventory,
+    diagnose_quota_infeasibility,
+    validate_quota_plan,
+)
 from modules.quiz_builder.selector import QuestionSelector
 from modules.quiz_exporter.word_renderer import (
     ExamMeta,
@@ -67,11 +75,17 @@ class ExportSelectionState:
     """Snapshot of the builder's current filter/config state for export."""
 
     bank_id: int | None
+    exam_count: int
     question_count: int
     question_types: list        # list[str]: MC | MA | BLANK | SA
     difficulties: list          # list[str]: easy | medium | hard
+    candidate_question_ids: list[int]
+    chapter_quota: dict[str, int]
+    type_quota: dict[str, int]
+    difficulty_quota: dict[str, int]
     shuffle_questions: bool
     shuffle_options: bool
+    no_repeat_between_exams: bool
     time_limit_minutes: int | None   # None when STUDY mode (no timer)
 
 
@@ -244,7 +258,7 @@ class ExamExportPanel(QGroupBox):
     # ------------------------------------------------------------------
 
     def _on_export(self) -> None:
-        """Collect config, select questions, render .docx, prompt save path."""
+        """Collect config and export one or many exam .docx files."""
         state = self._get_selection_state()
 
         if state.bank_id is None:
@@ -254,9 +268,7 @@ class ExamExportPanel(QGroupBox):
         exam_title = self._exp_title.text().strip()
         validation_error = self.validate_required_fields()
         if validation_error:
-            QMessageBox.warning(
-                self, "Thiếu thông tin", validation_error
-            )
+            QMessageBox.warning(self, "Thiếu thông tin", validation_error)
             return
 
         if not state.question_types:
@@ -266,37 +278,53 @@ class ExamExportPanel(QGroupBox):
             QMessageBox.warning(self, "Thiếu thông tin", "Chọn ít nhất một mức độ khó.")
             return
 
-        # Select questions
+        exam_count = max(1, state.exam_count)
+        use_quota = bool(state.chapter_quota or state.type_quota or state.difficulty_quota)
+        plan = QuotaPlan(
+            total_questions=state.question_count,
+            chapter_quota=state.chapter_quota,
+            type_quota=state.type_quota,
+            difficulty_quota=state.difficulty_quota,
+        )
+
+        # ------ Upfront validation: load a probe pool (no lazy attrs needed) ------
         try:
-            with get_session() as session:
-                questions_orm = self._selector.select(
-                    session,
+            with get_session() as _probe_session:
+                _probe = self._selector.select(
+                    _probe_session,
                     state.bank_id,
-                    count=state.question_count,
+                    count=100000,
                     question_types=state.question_types,
                     difficulties=state.difficulties,
+                    candidate_question_ids=state.candidate_question_ids or None,
                     active_only=True,
-                    shuffle=state.shuffle_questions,
+                    shuffle=False,
                 )
-                if not questions_orm:
-                    QMessageBox.warning(
-                        self,
-                        "Không đủ câu hỏi",
-                        "Không tìm thấy câu hỏi phù hợp với bộ lọc đã chọn.",
-                    )
-                    return
-                snapshots = self._selector.build_snapshots(
-                    questions_orm,
-                    shuffle_options=state.shuffle_options,
-                )
-                typed_snapshots = [
-                    ExportQuestionSnapshot.from_dict(s) for s in snapshots
-                ]
         except Exception as exc:
             show_critical_error(self, "Lỗi", "Không thể lấy câu hỏi.", exc=exc)
             return
 
-        # Essay questions dialog (only for Trắc nghiệm + Tự luận)
+        if not _probe:
+            QMessageBox.warning(
+                self, "Không đủ câu hỏi",
+                "Không tìm thấy câu hỏi phù hợp với bộ lọc đã chọn.",
+            )
+            return
+
+        if use_quota:
+            _inv = build_inventory(_probe)
+            _vr = validate_quota_plan(plan, _inv)
+            if not _vr.is_valid:
+                QMessageBox.warning(self, "Quota không hợp lệ", "\n".join(_vr.errors[:8]))
+                return
+        elif len(_probe) < state.question_count:
+            QMessageBox.warning(
+                self, "Không đủ câu hỏi",
+                f"Nguồn câu hỏi chỉ có {len(_probe)} câu, không đủ {state.question_count} câu cho mỗi đề.",
+            )
+            return
+
+        # ------ UI dialogs (before heavy work) ------
         essay_questions: list[dict] = []
         if self._exp_exam_type.currentText() == "Trắc nghiệm + Tự luận":
             dlg = _EssayQuestionsDialog(self)
@@ -304,45 +332,160 @@ class ExamExportPanel(QGroupBox):
                 return
             essay_questions = dlg.essay_questions()
 
-        # Build metadata and render config
-        meta = self.build_meta(duration_minutes=state.time_limit_minutes or 0)
-        meta.exam_title = exam_title
+        output_dir: Path | None = None
+        single_save_path: Path | None = None
+        if exam_count > 1:
+            selected_dir = QFileDialog.getExistingDirectory(self, "Chọn thư mục lưu đề thi")
+            if not selected_dir:
+                return
+            output_dir = Path(selected_dir)
+        else:
+            default_path = str(build_output_path(exam_title, EXPORTS_DIR))
+            save_path, _ = QFileDialog.getSaveFileName(
+                self, "Lưu đề thi", default_path, "Word Document (*.docx)",
+            )
+            if not save_path:
+                return
+            single_save_path = Path(save_path)
+
+        base_meta = self.build_meta(duration_minutes=state.time_limit_minutes or 0)
+        base_meta.exam_title = exam_title
         render_config = self.build_render_config()
         render_config.essay_questions = essay_questions
 
-        # Render
-        try:
-            renderer = WordRenderer()
-            doc = renderer.render(typed_snapshots, meta, render_config)
-        except Exception as exc:
-            show_critical_error(self, "Lỗi render", "Không thể tạo file Word.", exc=exc)
+        renderer = WordRenderer()
+        generated_paths: list[Path] = []
+        used_across_exams: set[int] = set()
+
+        for exam_index in range(1, exam_count + 1):
+            excluded = used_across_exams if state.no_repeat_between_exams else None
+
+            # Open a fresh session per exam so build_snapshots can access
+            # lazy-loaded relationships (q.options) while the session is live.
+            typed_snapshots: list[ExportQuestionSnapshot] = []
+            try:
+                with get_session() as session:
+                    candidates = self._selector.select(
+                        session,
+                        state.bank_id,
+                        count=100000,
+                        question_types=state.question_types,
+                        difficulties=state.difficulties,
+                        candidate_question_ids=state.candidate_question_ids or None,
+                        active_only=True,
+                        shuffle=state.shuffle_questions,
+                    )
+
+                    if use_quota:
+                        questions_orm = allocate_questions_for_plan(
+                            candidates, plan, excluded_question_ids=excluded,
+                        )
+                        if not questions_orm:
+                            diagnostic = diagnose_quota_infeasibility(
+                                candidates, plan, excluded_question_ids=excluded,
+                            )
+                            reason = (
+                                " (do bật tùy chọn không lặp câu giữa các đề)."
+                                if state.no_repeat_between_exams else "."
+                            )
+                            detail = (
+                                "\n\nChi tiết:\n- " + "\n- ".join(diagnostic[:4])
+                                if diagnostic else ""
+                            )
+                            QMessageBox.warning(
+                                self,
+                                "Không thể phân bổ quota",
+                                f"Không tìm được tổ hợp câu hỏi hợp lệ cho đề số {exam_index}{reason}{detail}",
+                            )
+                            break
+                    else:
+                        pool = (
+                            [q for q in candidates if q.id not in used_across_exams]
+                            if state.no_repeat_between_exams
+                            else list(candidates)
+                        )
+                        if len(pool) < state.question_count:
+                            reason = (
+                                " do bật tùy chọn không lặp câu giữa các đề"
+                                if state.no_repeat_between_exams else ""
+                            )
+                            QMessageBox.warning(
+                                self, "Không đủ câu hỏi",
+                                f"Không đủ câu hỏi để tạo đề số {exam_index}{reason}.",
+                            )
+                            break
+                        questions_orm = random.sample(pool, state.question_count)
+
+                    # update no-repeat tracking before snapshots so IDs are stable
+                    if state.no_repeat_between_exams:
+                        used_across_exams.update(q.id for q in questions_orm)
+
+                    # build_snapshots MUST run inside the session:
+                    # q.options is a lazy relationship; outside the session it raises
+                    # DetachedInstanceError.
+                    raw_snapshots = self._selector.build_snapshots(
+                        questions_orm, shuffle_options=state.shuffle_options,
+                    )
+                    typed_snapshots = [ExportQuestionSnapshot.from_dict(s) for s in raw_snapshots]
+
+            except Exception as exc:
+                show_critical_error(
+                    self, "Lỗi", f"Không thể chuẩn bị câu hỏi cho đề số {exam_index}.", exc=exc,
+                )
+                break
+
+            if not typed_snapshots:
+                # Reached by break inside the with block (warning already shown)
+                break
+
+            # Render outside session: typed_snapshots are plain dataclasses, safe.
+            meta = ExamMeta(**vars(base_meta))
+            if exam_count > 1:
+                meta.exam_title = f"{base_meta.exam_title} - Đề {exam_index}"
+
+            try:
+                doc = renderer.render(typed_snapshots, meta, render_config)
+            except Exception as exc:
+                show_critical_error(
+                    self, "Lỗi render", f"Không thể render đề số {exam_index}.", exc=exc,
+                )
+                break
+
+            target_path: Path
+            if exam_count > 1:
+                assert output_dir is not None
+                target_path = build_output_path(
+                    f"{base_meta.exam_title}_De_{exam_index:02d}", output_dir,
+                )
+            else:
+                assert single_save_path is not None
+                target_path = single_save_path
+
+            try:
+                doc.save(target_path)
+            except Exception as exc:
+                show_critical_error(
+                    self, "Lỗi lưu file", f"Không thể lưu đề số {exam_index}.", exc=exc,
+                )
+                break
+
+            generated_paths.append(target_path)
+
+        if not generated_paths:
             return
 
-        # Prompt save path
-        default_path = str(build_output_path(exam_title, EXPORTS_DIR))
-        save_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Lưu đề thi",
-            default_path,
-            "Word Document (*.docx)",
+        success_text = (
+            f"File đã được lưu tại:\n{generated_paths[0]}"
+            if exam_count == 1
+            else f"Đã tạo {len(generated_paths)} đề tại:\n{generated_paths[0].parent}"
         )
-        if not save_path:
-            return
-
-        try:
-            doc.save(save_path)
-        except Exception as exc:
-            show_critical_error(self, "Lỗi lưu file", "Không thể lưu file.", exc=exc)
-            return
-
+        open_target = generated_paths[0].parent
         reply = QMessageBox.information(
-            self,
-            "Xuất thành công",
-            f"File đã được lưu tại:\n{save_path}",
+            self, "Xuất thành công", success_text,
             QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Open,
         )
         if reply == QMessageBox.StandardButton.Open:
-            _open_folder(Path(save_path).parent)
+            _open_folder(open_target)
 
 
 # ---------------------------------------------------------------------------

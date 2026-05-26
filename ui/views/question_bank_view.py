@@ -173,7 +173,7 @@ class QuestionBankView(QWidget):
         # Table
         self._q_table = QTableWidget(0, 8)
         self._q_table.setHorizontalHeaderLabels(
-            ["ID", "Mã", "Nội dung", "Chương", "Loại", "Độ khó", "Điểm", "Trạng thái"]
+            ["STT", "Mã", "Nội dung", "Chương", "Loại", "Độ khó", "Điểm", "Trạng thái"]
         )
         self._q_table.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.ResizeMode.Stretch
@@ -260,7 +260,7 @@ class QuestionBankView(QWidget):
         self._q_table.setSortingEnabled(False)  # disable during populate to avoid Qt sort-insert bug
         self._q_table.setRowCount(len(questions))
         for r, q in enumerate(questions):
-            self._q_table.setItem(r, 0, _cell(str(q.id), center=True))
+            self._q_table.setItem(r, 0, _cell(str(r + 1), center=True))
             self._q_table.setItem(r, 1, _cell(q.question_code or ""))
             preview = (q.content or "")[:100]
             self._q_table.setItem(r, 2, _cell(preview))
@@ -280,7 +280,7 @@ class QuestionBankView(QWidget):
                 status_item = _cell("✗ Inactive", center=True)
                 status_item.setForeground(QColor("#c0392b"))
             self._q_table.setItem(r, 7, status_item)
-            # Store question id in column 0
+            # Store question id in column 0 (displayed as STT)
             self._q_table.item(r, 0).setData(
                 Qt.ItemDataRole.UserRole, q.id
             )

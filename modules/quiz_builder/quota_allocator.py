@@ -2,7 +2,7 @@
 
 This module keeps quota complexity out of UI code. It validates whether
 chapter/type/difficulty quota plans are feasible for a candidate pool and
-selects questions that satisfy all three quota dimensions simultaneously.
+selects questions that satisfy configured quota dimensions simultaneously.
 """
 from __future__ import annotations
 
@@ -89,21 +89,21 @@ def validate_quota_plan(plan: QuotaPlan, inventory: Inventory) -> QuotaValidatio
         )
 
     chapter_sum = sum(plan.chapter_quota.values())
-    if chapter_sum != plan.total_questions:
+    if chapter_sum > plan.total_questions:
         errors.append(
-            f"Tổng quota theo Chương ({chapter_sum}) phải bằng số câu mỗi đề ({plan.total_questions})."
+            f"Tổng quota theo Chương ({chapter_sum}) không được lớn hơn số câu mỗi đề ({plan.total_questions})."
         )
 
     type_sum = sum(plan.type_quota.values())
-    if type_sum != plan.total_questions:
+    if type_sum > plan.total_questions:
         errors.append(
-            f"Tổng quota theo Loại ({type_sum}) phải bằng số câu mỗi đề ({plan.total_questions})."
+            f"Tổng quota theo Loại ({type_sum}) không được lớn hơn số câu mỗi đề ({plan.total_questions})."
         )
 
     diff_sum = sum(plan.difficulty_quota.values())
-    if diff_sum != plan.total_questions:
+    if diff_sum > plan.total_questions:
         errors.append(
-            f"Tổng quota theo Độ khó ({diff_sum}) phải bằng số câu mỗi đề ({plan.total_questions})."
+            f"Tổng quota theo Độ khó ({diff_sum}) không được lớn hơn số câu mỗi đề ({plan.total_questions})."
         )
 
     for chap, requested in plan.chapter_quota.items():
@@ -143,81 +143,262 @@ def allocate_questions_for_plan(
     excluded_question_ids: set[int] | None = None,
     max_attempts: int = 300,
 ) -> list[Question] | None:
-    """Allocate one exam question set satisfying chapter/type/difficulty quotas.
+    """Allocate one exam question set satisfying configured quotas.
 
-    Uses randomized greedy retries to balance practicality and simplicity.
-    Returns None when no feasible allocation is found within max_attempts.
+    Quota semantics:
+    - Keys present in a quota dict are minimum required counts.
+    - Missing keys in a configured axis are unconstrained.
+    - Empty quota dict means that whole axis is ignored.
+
+    Returns None when no feasible allocation is found.
     """
 
     if not questions or plan.total_questions <= 0:
         return None
 
     excluded_question_ids = excluded_question_ids or set()
+    chapter_rem = dict(plan.chapter_quota)
+    type_rem = dict(plan.type_quota)
+    diff_rem = dict(plan.difficulty_quota)
 
-    for _ in range(max_attempts):
-        chapter_rem = dict(plan.chapter_quota)
-        type_rem = dict(plan.type_quota)
-        diff_rem = dict(plan.difficulty_quota)
+    pool = [q for q in questions if q.id not in excluded_question_ids]
+    random.shuffle(pool)
 
-        pool = questions[:]
-        random.shuffle(pool)
+    if len(pool) < plan.total_questions:
+        return None
 
-        selected: list[Question] = []
-        used_ids: set[int] = set()
+    selected: list[Question] = []
+    used_ids: set[int] = set()
+    max_nodes = max(2000, max_attempts * 40)
+    nodes = 0
 
-        while len(selected) < plan.total_questions:
-            best_q: Question | None = None
-            best_score = -1.0
+    def _q_meta(q: Question) -> tuple[str, str, str]:
+        return (
+            chapter_key(q.category),
+            q.question_type,
+            (q.difficulty or "").strip().lower() or "medium",
+        )
 
-            for q in pool:
-                if q.id in excluded_question_ids:
-                    continue
-                if q.id in used_ids:
-                    continue
-                chap = chapter_key(q.category)
-                qtype = q.question_type
-                diff = (q.difficulty or "").strip().lower() or "medium"
+    def _remaining_pool() -> list[Question]:
+        return [q for q in pool if q.id not in used_ids]
 
-                if chapter_rem.get(chap, 0) <= 0:
-                    continue
-                if type_rem.get(qtype, 0) <= 0:
-                    continue
-                if diff_rem.get(diff, 0) <= 0:
-                    continue
+    def _sum_remaining_need(values: dict[str, int]) -> int:
+        return sum(v for v in values.values() if v > 0)
 
-                # Prioritize the most constrained remaining buckets.
-                score = (
-                    (chapter_rem.get(chap, 0) * 1.3)
-                    + (type_rem.get(qtype, 0) * 1.1)
-                    + (diff_rem.get(diff, 0) * 1.0)
-                )
-                if score > best_score:
-                    best_score = score
-                    best_q = q
+    def _has_capacity() -> bool:
+        remaining = _remaining_pool()
+        remaining_slots = plan.total_questions - len(selected)
 
-            if best_q is None:
-                break
+        if _sum_remaining_need(chapter_rem) > remaining_slots:
+            return False
+        if _sum_remaining_need(type_rem) > remaining_slots:
+            return False
+        if _sum_remaining_need(diff_rem) > remaining_slots:
+            return False
 
-            selected.append(best_q)
-            used_ids.add(best_q.id)
+        for chap, need in chapter_rem.items():
+            if need <= 0:
+                continue
+            compatible = sum(1 for q in remaining if _q_meta(q)[0] == chap)
+            if compatible < need:
+                return False
 
-            chap = chapter_key(best_q.category)
-            qtype = best_q.question_type
-            diff = (best_q.difficulty or "").strip().lower() or "medium"
-            chapter_rem[chap] -= 1
-            type_rem[qtype] -= 1
-            diff_rem[diff] -= 1
+        for qtype, need in type_rem.items():
+            if need <= 0:
+                continue
+            compatible = sum(1 for q in remaining if _q_meta(q)[1] == qtype)
+            if compatible < need:
+                return False
 
-        if len(selected) != plan.total_questions:
-            continue
+        for diff, need in diff_rem.items():
+            if need <= 0:
+                continue
+            compatible = sum(1 for q in remaining if _q_meta(q)[2] == diff)
+            if compatible < need:
+                return False
 
-        if any(v != 0 for v in chapter_rem.values()):
-            continue
-        if any(v != 0 for v in type_rem.values()):
-            continue
-        if any(v != 0 for v in diff_rem.values()):
-            continue
+        return True
 
-        return selected
+    def _candidate_score(q: Question) -> tuple[int, int]:
+        chap, qtype, diff = _q_meta(q)
+        gain = 0
+        if chapter_rem.get(chap, 0) > 0:
+            gain += 1
+        if type_rem.get(qtype, 0) > 0:
+            gain += 1
+        if diff_rem.get(diff, 0) > 0:
+            gain += 1
+        pressure = chapter_rem.get(chap, 0) + type_rem.get(qtype, 0) + diff_rem.get(diff, 0)
+        return (-gain, -pressure)
 
+    def _search() -> bool:
+        nonlocal nodes
+        nodes += 1
+        if nodes > max_nodes:
+            return False
+
+        if len(selected) == plan.total_questions:
+            return (
+                all(v == 0 for v in chapter_rem.values())
+                and all(v == 0 for v in type_rem.values())
+                and all(v == 0 for v in diff_rem.values())
+            )
+
+        if not _has_capacity():
+            return False
+
+        candidates = [q for q in pool if q.id not in used_ids]
+        remaining_slots = plan.total_questions - len(selected)
+        if len(candidates) < remaining_slots:
+            return False
+
+        candidates.sort(key=_candidate_score)
+
+        for q in candidates:
+            chap, qtype, diff = _q_meta(q)
+            selected.append(q)
+            used_ids.add(q.id)
+            prev_chap = chapter_rem.get(chap, 0)
+            prev_type = type_rem.get(qtype, 0)
+            prev_diff = diff_rem.get(diff, 0)
+            if prev_chap > 0:
+                chapter_rem[chap] = prev_chap - 1
+            if prev_type > 0:
+                type_rem[qtype] = prev_type - 1
+            if prev_diff > 0:
+                diff_rem[diff] = prev_diff - 1
+
+            if _search():
+                return True
+
+            chapter_rem[chap] = prev_chap
+            type_rem[qtype] = prev_type
+            diff_rem[diff] = prev_diff
+            used_ids.remove(q.id)
+            selected.pop()
+
+        return False
+
+    if _search():
+        return list(selected)
     return None
+
+
+def diagnose_quota_infeasibility(
+    questions: list[Question],
+    plan: QuotaPlan,
+    *,
+    excluded_question_ids: set[int] | None = None,
+) -> list[str]:
+    """Return human-readable reasons when quota dimensions conflict.
+
+    This does not try to prove all infeasibility causes, but surfaces common
+    cross-dimension bottlenecks (chapter/type/difficulty intersections).
+    """
+    excluded_question_ids = excluded_question_ids or set()
+    pool = [q for q in questions if q.id not in excluded_question_ids]
+
+    if len(pool) < plan.total_questions:
+        return [
+            f"Pool hiện tại còn {len(pool)} câu sau khi loại trừ, không đủ {plan.total_questions} câu cho 1 đề."
+        ]
+
+    chapter_rem = dict(plan.chapter_quota)
+    type_rem = dict(plan.type_quota)
+    diff_rem = dict(plan.difficulty_quota)
+
+    def _meta(q: Question) -> tuple[str, str, str]:
+        return (
+            chapter_key(q.category),
+            q.question_type,
+            (q.difficulty or "").strip().lower() or "medium",
+        )
+
+    reasons: list[str] = []
+
+    chapter_sum = sum(chapter_rem.values())
+    if chapter_sum > plan.total_questions:
+        reasons.append(
+            f"Tổng quota theo Chương ({chapter_sum}) lớn hơn số câu mỗi đề ({plan.total_questions})."
+        )
+    type_sum = sum(type_rem.values())
+    if type_sum > plan.total_questions:
+        reasons.append(
+            f"Tổng quota theo Loại ({type_sum}) lớn hơn số câu mỗi đề ({plan.total_questions})."
+        )
+    diff_sum = sum(diff_rem.values())
+    if diff_sum > plan.total_questions:
+        reasons.append(
+            f"Tổng quota theo Độ khó ({diff_sum}) lớn hơn số câu mỗi đề ({plan.total_questions})."
+        )
+
+    for chap, need in chapter_rem.items():
+        if need <= 0:
+            continue
+        compatible = sum(1 for q in pool if _meta(q)[0] == chap)
+        if compatible < need:
+            reasons.append(
+                f"Chương '{chap}' cần tối thiểu {need} câu nhưng chỉ có {compatible} câu trong pool."
+            )
+
+    for qtype, need in type_rem.items():
+        if need <= 0:
+            continue
+        compatible = sum(1 for q in pool if _meta(q)[1] == qtype)
+        if compatible < need:
+            reasons.append(
+                f"Loại '{qtype}' cần tối thiểu {need} câu nhưng chỉ có {compatible} câu trong pool."
+            )
+
+    for diff, need in diff_rem.items():
+        if need <= 0:
+            continue
+        compatible = sum(1 for q in pool if _meta(q)[2] == diff)
+        if compatible < need:
+            reasons.append(
+                f"Độ khó '{diff}' cần tối thiểu {need} câu nhưng chỉ có {compatible} câu trong pool."
+            )
+
+    if chapter_rem and type_rem:
+        for chap, need in chapter_rem.items():
+            if need <= 0:
+                continue
+            compatible = 0
+            for q in pool:
+                qchap, qt, _ = _meta(q)
+                if qchap == chap and qt in type_rem:
+                    compatible += 1
+            if compatible < need:
+                reasons.append(
+                    f"Chương '{chap}' cần {need} câu nhưng chỉ có {compatible} câu giao nhau với các loại đã cấu hình."
+                )
+
+    if chapter_rem and diff_rem:
+        for chap, need in chapter_rem.items():
+            if need <= 0:
+                continue
+            compatible = 0
+            for q in pool:
+                qchap, _, qdiff = _meta(q)
+                if qchap == chap and qdiff in diff_rem:
+                    compatible += 1
+            if compatible < need:
+                reasons.append(
+                    f"Chương '{chap}' cần {need} câu nhưng chỉ có {compatible} câu giao nhau với độ khó đã cấu hình."
+                )
+
+    if type_rem and diff_rem:
+        for qtype, need in type_rem.items():
+            if need <= 0:
+                continue
+            compatible = 0
+            for q in pool:
+                _, qt, qdiff = _meta(q)
+                if qt == qtype and qdiff in diff_rem:
+                    compatible += 1
+            if compatible < need:
+                reasons.append(
+                    f"Loại '{qtype}' cần {need} câu nhưng chỉ có {compatible} câu giao nhau với độ khó đã cấu hình."
+                )
+
+    return reasons

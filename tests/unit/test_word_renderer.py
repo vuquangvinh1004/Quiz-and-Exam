@@ -298,6 +298,32 @@ class TestRender:
         text = _text(doc)
         assert "ĐÁP ÁN VÀ THANG ĐIỂM" in text
 
+    def test_student_info_row_uses_shorter_class_and_stt_lines(self):
+        doc = self._render(questions=[MC_Q])
+        text = _text(doc)
+        assert "MSSV:" in text
+        assert "Lớp:  __________" in text
+        assert "STT:  ___" in text
+
+    def test_question_and_option_runs_use_12pt(self):
+        cfg = ExportConfig(
+            show_instructions=False,
+            show_answer_sheet=False,
+            show_scoring_rules=False,
+            show_answer_key=False,
+        )
+        doc = self._render(questions=[MC_Q], config=cfg)
+
+        question_p = next(p for p in doc.paragraphs if p.text.startswith("Câu 1."))
+        for run in question_p.runs:
+            assert run.font.size is not None
+            assert run.font.size.pt == pytest.approx(12.0)
+
+        option_p = next(p for p in doc.paragraphs if p.text.startswith("A."))
+        for run in option_p.runs:
+            assert run.font.size is not None
+            assert run.font.size.pt == pytest.approx(12.0)
+
 
 # ---------------------------------------------------------------------------
 # Numbering

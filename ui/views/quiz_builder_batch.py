@@ -13,6 +13,7 @@ from modules.quiz_builder.quota_allocator import (
     QuotaPlan,
     allocate_questions_for_plan,
     build_inventory,
+    diagnose_quota_infeasibility,
     validate_quota_plan,
 )
 from modules.quiz_exporter.word_renderer import ExportQuestionSnapshot, WordRenderer, build_output_path
@@ -67,17 +68,32 @@ def run_batch_generation(view) -> None:
     used_across_exams: set[int] = set()
 
     for exam_index in range(1, exam_count + 1):
-        selected = allocate_questions_for_plan(
-            questions,
-            plan,
-            excluded_question_ids=used_across_exams if no_repeat_between_exams else None,
-        )
+        try:
+            selected = allocate_questions_for_plan(
+                questions,
+                plan,
+                excluded_question_ids=used_across_exams if no_repeat_between_exams else None,
+            )
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError) as exc:
+            QMessageBox.critical(
+                view,
+                "Lỗi tạo đề",
+                f"Không thể phân bổ câu hỏi cho đề số {exam_index}:\n{exc}",
+            )
+            break
+
         if not selected:
             reason = " (do bật tùy chọn không lặp câu giữa các đề)." if no_repeat_between_exams else "."
+            diagnostic = diagnose_quota_infeasibility(
+                questions,
+                plan,
+                excluded_question_ids=used_across_exams if no_repeat_between_exams else None,
+            )
+            detail = f"\n\nChi tiết:\n- " + "\n- ".join(diagnostic[:4]) if diagnostic else ""
             QMessageBox.warning(
                 view,
                 "Không thể tạo đủ đề",
-                f"Không tìm được tổ hợp câu hỏi hợp lệ cho đề số {exam_index}{reason}",
+                f"Không tìm được tổ hợp câu hỏi hợp lệ cho đề số {exam_index}{reason}{detail}",
             )
             break
 
@@ -88,11 +104,6 @@ def run_batch_generation(view) -> None:
             selected,
             shuffle_options=view._cb_shuffle_opts.isChecked(),
         )
-        # Keep typed snapshot contract visible in builder layer.
-        view._selector.build_creation_snapshots(
-            selected,
-            shuffle_options=view._cb_shuffle_opts.isChecked(),
-        )
         typed_snapshots = [ExportQuestionSnapshot.from_dict(s) for s in raw_snapshots]
 
         meta = view._export_panel.build_meta(duration_minutes=view._duration_spin.value())
@@ -100,9 +111,29 @@ def run_batch_generation(view) -> None:
             meta.exam_title = f"{meta.exam_title} - Đề {exam_index}"
         render_config = view._export_panel.build_render_config()
 
-        doc = renderer.render(typed_snapshots, meta, render_config)
-        output_path = build_output_path(meta.exam_title, Path(output_dir))
-        doc.save(output_path)
+        try:
+            doc = renderer.render(typed_snapshots, meta, render_config)
+        except (RuntimeError, ValueError, TypeError) as exc:
+            QMessageBox.critical(
+                view,
+                "Lỗi render",
+                f"Không thể render đề số {exam_index}:\n{exc}",
+            )
+            break
+
+        output_path = build_output_path(
+            f"{meta.exam_title}_De_{exam_index:02d}",
+            Path(output_dir),
+        )
+        try:
+            doc.save(output_path)
+        except (OSError, PermissionError, FileNotFoundError) as exc:
+            QMessageBox.critical(
+                view,
+                "Lỗi lưu file",
+                f"Không thể lưu đề số {exam_index}:\n{exc}",
+            )
+            break
         generated_paths.append(output_path)
 
     if not generated_paths:

@@ -256,6 +256,7 @@ class WordRenderer:
         """
         # 1. Normal style – all paragraph styles inherit from this
         doc.styles["Normal"].font.name = font_name
+        doc.styles["Normal"].font.size = Pt(12)
 
         # 2. Document-level rPrDefault – catches runs that bypass style inheritance
         styles_el = doc.styles.element
@@ -277,6 +278,16 @@ class WordRenderer:
         rFonts.set(qn("w:hAnsi"), font_name)
         rFonts.set(qn("w:cs"), font_name)
         rPr.insert(0, rFonts)
+        for existing in rPr.findall(qn("w:sz")):
+            rPr.remove(existing)
+        for existing in rPr.findall(qn("w:szCs")):
+            rPr.remove(existing)
+        sz = OxmlElement("w:sz")
+        sz.set(qn("w:val"), "24")
+        sz_cs = OxmlElement("w:szCs")
+        sz_cs.set(qn("w:val"), "24")
+        rPr.append(sz)
+        rPr.append(sz_cs)
     # ------------------------------------------------------------------
     # Header
     # ------------------------------------------------------------------
@@ -387,8 +398,8 @@ class WordRenderer:
 
         # Row 2: student-ID / class / order
         p = stu_tbl.cell(2, 0).paragraphs[0]
-        p.add_run("MSSV:  " + "_" * 18 + "   Lớp:  " + "_" * 16 + "   STT:  " + "_" * 5)
-        p.runs[0].font.size = Pt(11)
+        p.add_run("MSSV:  " + "_" * 16 + "   Lớp:  " + "_" * 10 + "   STT:  " + "_" * 3)
+        p.runs[0].font.size = Pt(12)
         p.paragraph_format.space_before = Pt(6)
         p.paragraph_format.space_after = Pt(6)
 
@@ -423,10 +434,10 @@ class WordRenderer:
         p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
         run = p.add_run("Trang ")
-        run.font.size = Pt(11)
+        run.font.size = Pt(12)
         self._add_field_code(p, "PAGE")
         run2 = p.add_run(" / ")
-        run2.font.size = Pt(11)
+        run2.font.size = Pt(12)
         self._add_field_code(p, "SECTIONPAGES")
 
     def _clear_supplementary_header(self, doc: Document) -> None:
@@ -464,7 +475,7 @@ class WordRenderer:
     def _add_field_code(self, paragraph, field_name: str) -> None:
         """Append a Word field code run (PAGE, NUMPAGES, etc.) to *paragraph*."""
         run = paragraph.add_run()
-        run.font.size = Pt(11)
+        run.font.size = Pt(12)
         fld_begin = OxmlElement("w:fldChar")
         fld_begin.set(qn("w:fldCharType"), "begin")
         run._r.append(fld_begin)
@@ -665,11 +676,11 @@ class WordRenderer:
         p = doc.add_paragraph()
         run = p.add_run(f"Câu {number}.")
         run.bold = True
-        run.font.size = Pt(11)
+        run.font.size = Pt(12)
         p.add_run(f" {content}")
         p.runs[-1].font.size = Pt(12)
         p.add_run(f"  [{points:g} điểm]")
-        p.runs[-1].font.size = Pt(11)
+        p.runs[-1].font.size = Pt(12)
         p.runs[-1].font.color.rgb = RGBColor(0x80, 0x80, 0x80)
 
         if qtype in ("MC", "MA"):
@@ -687,7 +698,7 @@ class WordRenderer:
             run.bold = True
             run.font.size = Pt(12)
             p.add_run(opt.get("text", ""))
-            p.runs[-1].font.size = Pt(11)
+            p.runs[-1].font.size = Pt(12)
             p.paragraph_format.left_indent = Cm(1.0)
 
     def _render_blank_answer_space(self, doc: Document) -> None:
@@ -723,9 +734,9 @@ class WordRenderer:
             p = doc.add_paragraph()
             run = p.add_run(f"Câu {num}.")
             run.bold = True
-            run.font.size = Pt(11)
+            run.font.size = Pt(12)
             p.add_run(f"  [{score:g} điểm]")
-            p.runs[-1].font.size = Pt(11)
+            p.runs[-1].font.size = Pt(12)
             p.runs[-1].font.color.rgb = RGBColor(0x80, 0x80, 0x80)
             # Blank answer lines
             for _ in range(6):
@@ -844,16 +855,16 @@ class WordRenderer:
             if qtype in types_present:
                 p = doc.add_paragraph(style="List Bullet")
                 p.add_run(rules[qtype])
-                p.runs[0].font.size = Pt(11)
+                p.runs[0].font.size = Pt(12)
 
         if config and config.essay_questions:
             p = doc.add_paragraph(style="List Bullet")
             p.add_run("Câu hỏi tự luận: Chấm theo thang điểm hướng dẫn chi tiết trong đáp án.")
-            p.runs[0].font.size = Pt(11)
+            p.runs[0].font.size = Pt(12)
 
         p = doc.add_paragraph(f"Tổng điểm toàn bài: {total:g} điểm.")
         p.runs[0].bold = True
-        p.runs[0].font.size = Pt(11)
+        p.runs[0].font.size = Pt(12)
         doc.add_paragraph("")
 
     # ------------------------------------------------------------------
@@ -878,7 +889,7 @@ class WordRenderer:
             if title:
                 p = doc.add_paragraph(title)
                 p.runs[0].bold = True
-                p.runs[0].font.size = Pt(11)
+                p.runs[0].font.size = Pt(12)
 
             for q in qs:
                 global_counter += 1
@@ -905,7 +916,7 @@ class WordRenderer:
                 p = doc.add_paragraph(
                     f"Câu {num}. {answer_str}  —  {points:g} điểm"
                 )
-                p.runs[0].font.size = Pt(11)
+                p.runs[0].font.size = Pt(12)
 
         doc.add_paragraph("")
 
@@ -913,7 +924,7 @@ class WordRenderer:
         if config.essay_questions:
             p = doc.add_paragraph("Phần Tự luận")
             p.runs[0].bold = True
-            p.runs[0].font.size = Pt(11)
+            p.runs[0].font.size = Pt(12)
             for eq in config.essay_questions:
                 num = eq.get("number", 1)
                 score = eq.get("score", 1.0)
@@ -921,7 +932,7 @@ class WordRenderer:
                 p = doc.add_paragraph(
                     f"Câu {num} (tự luận): Chấm theo thang điểm  —  {score:g} điểm"
                 )
-                p.runs[0].font.size = Pt(11)
+                p.runs[0].font.size = Pt(12)
 
         doc.add_paragraph("")
         p = doc.add_paragraph(f"TỔNG ĐIỂM: {total:g} điểm")

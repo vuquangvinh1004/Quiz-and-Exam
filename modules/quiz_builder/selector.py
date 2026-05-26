@@ -121,6 +121,7 @@ class QuestionSelector:
                 ]
                 if shuffle_options:
                     random.shuffle(opts)
+                    self._relabel_option_keys(opts)
                 snap["options"] = opts
                 snap["accepted_answers"] = []
             else:
@@ -128,6 +129,17 @@ class QuestionSelector:
                 snap["accepted_answers"] = q.get_accepted_answers()
             result.append(snap)
         return result
+
+    @staticmethod
+    def _relabel_option_keys(options: list[dict]) -> None:
+        """Normalize option labels to A/B/C... after shuffling display order."""
+        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        for i, opt in enumerate(options):
+            if i < len(alphabet):
+                opt["key"] = alphabet[i]
+            else:
+                # Defensive fallback for unusually long option lists.
+                opt["key"] = f"A{i + 1}"
 
     def build_creation_snapshots(
         self,

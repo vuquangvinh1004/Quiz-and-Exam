@@ -54,7 +54,7 @@ def test_spinbox_min_width_and_quota_row_height(qapp_instance):
     assert runner._setup_count_spin.minimumWidth() >= 120
 
 
-def test_type_overflow_marks_red_background(qapp_instance):
+def test_type_quota_is_capped_by_available_count(qapp_instance):
     view = QuizBuilderView()
 
     questions = [
@@ -68,8 +68,38 @@ def test_type_overflow_marks_red_background(qapp_instance):
     ]
 
     view._count_spin.setValue(2)
+    view._sync_quota_availability(questions)
     view._type_spins["MC"].setValue(2)
     view._refresh_quota_warnings(questions)
 
-    assert "#f8d7da" in view._type_spins["MC"].styleSheet()
-    assert view._type_table.item(0, 0).background().color().name().lower() == "#fdecea"
+    assert view._type_table.item(0, 1).text() == "1"
+    assert view._type_spins["MC"].maximum() == 1
+    assert view._type_spins["MC"].value() == 1
+
+
+def test_partial_quota_does_not_warn_when_axis_sum_not_exceed_total(qapp_instance):
+    view = QuizBuilderView()
+
+    questions = [
+        Question(
+            bank_id=1,
+            question_type="MC",
+            content="Q1",
+            difficulty="easy",
+            category="Chương 1",
+        ),
+        Question(
+            bank_id=1,
+            question_type="MA",
+            content="Q2",
+            difficulty="medium",
+            category="Chương 2",
+        ),
+    ]
+
+    view._count_spin.setValue(2)
+    view._sync_quota_availability(questions)
+    view._type_spins["MC"].setValue(1)
+    view._refresh_quota_warnings(questions)
+
+    assert "fdecea" not in view._type_spins["MC"].styleSheet().lower()
