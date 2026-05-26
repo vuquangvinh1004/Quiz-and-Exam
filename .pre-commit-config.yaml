@@ -27,6 +27,11 @@ repos:
   # ── Pytest fast-fail (unit tests only, no Qt) ───────────────────────────
   - repo: local
     hooks:
+      - id: no-sensitive-data-files
+        name: block sensitive/local data files
+        language: system
+        entry: python scripts/check_no_sensitive_data.py
+        pass_filenames: true
       - id: pytest-unit
         name: pytest (unit tests)
         language: system

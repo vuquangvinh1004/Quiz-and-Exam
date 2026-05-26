@@ -12,6 +12,18 @@ venv/
 
 # Data (user data must not be committed)
 data/
+*.db
+*.sqlite
+*.sqlite3
+*.db3
+*.bak
+*.tmp
+*.key
+*.pem
+*.p12
+*.pfx
+.env.*
+!.env.example
 
 # PyInstaller
 *.spec
