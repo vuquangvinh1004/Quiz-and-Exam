@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
-    QPushButton,
     QScrollArea,
     QTextEdit,
     QVBoxLayout,
@@ -307,7 +306,11 @@ class QuestionEditorDialog(QDialog):
 
         # Build options list for MC/MA
         options: list[tuple[str, str, bool]] = []
-        for label, (_, edit, cb) in zip(VALID_OPTION_LABELS, self._option_rows):
+        for label, (_, edit, cb) in zip(
+            VALID_OPTION_LABELS,
+            self._option_rows,
+            strict=False,
+        ):
             options.append((label, edit.text(), cb.isChecked()))
 
         # Build accepted answers for BLANK/SA

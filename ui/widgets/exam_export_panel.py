@@ -9,11 +9,10 @@ import os
 import random
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QCheckBox,

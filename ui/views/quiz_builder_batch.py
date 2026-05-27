@@ -16,7 +16,11 @@ from modules.quiz_builder.quota_allocator import (
     diagnose_quota_infeasibility,
     validate_quota_plan,
 )
-from modules.quiz_exporter.word_renderer import ExportQuestionSnapshot, WordRenderer, build_output_path
+from modules.quiz_exporter.word_renderer import (
+    ExportQuestionSnapshot,
+    WordRenderer,
+    build_output_path,
+)
 
 
 def run_batch_generation(view) -> None:
@@ -89,7 +93,7 @@ def run_batch_generation(view) -> None:
                 plan,
                 excluded_question_ids=used_across_exams if no_repeat_between_exams else None,
             )
-            detail = f"\n\nChi tiết:\n- " + "\n- ".join(diagnostic[:4]) if diagnostic else ""
+            detail = "\n\nChi tiết:\n- " + "\n- ".join(diagnostic[:4]) if diagnostic else ""
             QMessageBox.warning(
                 view,
                 "Không thể tạo đủ đề",

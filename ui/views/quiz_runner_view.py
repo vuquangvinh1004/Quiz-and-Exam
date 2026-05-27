@@ -1,31 +1,25 @@
 """Quiz runner view for setup, attempt runtime, and finalize flow."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QDialog,
-    QHBoxLayout,
-    QLabel,
     QMessageBox,
-    QPushButton,
-    QScrollArea,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from core.domain.services.quiz_service import (
-    QuizInfoDTO,
     QuizQuestionSnapshot,
     QuizService,
 )
 from core.domain.services.submission_service import (
     SubmissionService,
 )
-from core.utils.constants import AttemptStatus, BLANK_PLACEHOLDER, QuizMode
+from core.utils.constants import BLANK_PLACEHOLDER, AttemptStatus, QuizMode
 from core.utils.logger import get_logger
 from modules.grading.result_builder import AttemptResultData
 from modules.quiz_builder.selector import QuestionSelector
@@ -34,6 +28,8 @@ from modules.quiz_runner.session_controller import QuizRunnerSessionController
 from modules.quiz_runner.session_state import QuizRunnerState
 from modules.quiz_runner.submit_handler import build_graded_result
 from modules.quiz_runner.timer_controller import QuizTimerController
+from ui.dialogs.submit_dialog import SubmitDialog
+from ui.dialogs.submitter_info_dialog import SubmitterInfoDialog
 from ui.views.quiz_runner_layout import (
     build_done_panel,
     build_running_panel,
@@ -41,8 +37,6 @@ from ui.views.quiz_runner_layout import (
 )
 from ui.views.quiz_runner_setup_mixin import QuizRunnerSetupMixin
 from ui.views.quiz_runner_state_proxy import QuizRunnerStateProxyMixin
-from ui.dialogs.submitter_info_dialog import SubmitterInfoDialog
-from ui.dialogs.submit_dialog import SubmitDialog
 from ui.widgets.quiz_answer_renderer import QuizAnswerRenderer
 from ui.widgets.quiz_result_presenter import QuizResultPresenter
 
@@ -188,7 +182,7 @@ class QuizRunnerView(QuizRunnerSetupMixin, QuizRunnerStateProxyMixin, QWidget):
         self._answers = {}
         self._confirmed = set()
         self._current_index = 0
-        self._started_at = datetime.now(timezone.utc)
+        self._started_at = datetime.now(UTC)
         self._quiz_title = info.title
 
         self._update_running_header()

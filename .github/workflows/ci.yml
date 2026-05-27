@@ -64,3 +64,6 @@ jobs:
 
       - name: Check lint (high-signal)
         run: ruff check . --output-format=github --select E9,F63,F7,F82,F821
+
+      - name: Check lint debt baseline (non-regression)
+        run: python scripts/check_ruff_baseline.py --baseline-file scripts/ruff_baseline.txt --target .

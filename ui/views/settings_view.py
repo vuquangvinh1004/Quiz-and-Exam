@@ -20,8 +20,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui.facades.settings_facade import SettingsFacade
 from ui.dialogs.submission_settings_dialog import SubmissionSettingsDialog
+from ui.facades.settings_facade import SettingsFacade
 
 
 class SettingsView(QWidget):

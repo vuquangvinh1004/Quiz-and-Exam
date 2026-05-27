@@ -14,13 +14,10 @@ submission without changing the saved settings.
 """
 from __future__ import annotations
 
-import threading
 from pathlib import Path
-from typing import Optional
 
-from PySide6.QtCore import Qt, QThread, Signal, QObject
+from PySide6.QtCore import QObject, Qt, QThread, Signal
 from PySide6.QtWidgets import (
-    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -60,10 +57,10 @@ class _SubmissionWorker(QObject):
         service: SubmissionService,
         data: AttemptResultData,
         cfg: SubmissionSettings,
-        recipient: Optional[str],
-        folder_path: Optional[str],
-        gsheets_url: Optional[str] = None,
-        gsheets_credentials_path: Optional[str] = None,
+        recipient: str | None,
+        folder_path: str | None,
+        gsheets_url: str | None = None,
+        gsheets_credentials_path: str | None = None,
     ) -> None:
         super().__init__()
         self._service = service
@@ -141,7 +138,7 @@ class SubmitDialog(QDialog):
         self._data = data
         self._cfg = cfg
         self._service = service
-        self._worker_thread: Optional[QThread] = None
+        self._worker_thread: QThread | None = None
 
         self.setWindowTitle("Nộp bài")
         self.setMinimumWidth(460)
@@ -334,10 +331,10 @@ class SubmitDialog(QDialog):
     def _start_submission(
         self,
         cfg: SubmissionSettings,
-        recipient: Optional[str],
-        folder_path: Optional[str],
-        gsheets_url: Optional[str] = None,
-        gsheets_credentials_path: Optional[str] = None,
+        recipient: str | None,
+        folder_path: str | None,
+        gsheets_url: str | None = None,
+        gsheets_credentials_path: str | None = None,
     ) -> None:
         """Start background submission thread."""
         self._submit_btn.setEnabled(False)
@@ -366,10 +363,10 @@ class SubmitDialog(QDialog):
     def _on_submission_done(self, result: dict) -> None:
         self._progress.hide()
         errors: list[str] = result.get("errors", [])  # type: ignore[assignment]
-        folder_path: Optional[Path] = result.get("folder_path")  # type: ignore[assignment]
+        folder_path: Path | None = result.get("folder_path")  # type: ignore[assignment]
         email_sent: bool = result.get("email_sent", False)  # type: ignore[assignment]
         gsheets_submitted: bool = result.get("gsheets_submitted", False)  # type: ignore[assignment]
-        gsheets_failed_data: Optional[dict] = result.get("gsheets_failed_data")  # type: ignore[assignment]
+        gsheets_failed_data: dict | None = result.get("gsheets_failed_data")  # type: ignore[assignment]
 
         # Separate GSheets errors from blocking errors so email/folder success
         # is still reported and the user is offered enqueue for GSheets.

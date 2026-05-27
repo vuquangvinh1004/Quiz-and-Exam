@@ -3,9 +3,8 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from typing import Optional
 
-from PySide6.QtCore import QObject, QThread, Qt, Signal
+from PySide6.QtCore import QObject, Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -26,6 +25,7 @@ from core.database.session import get_session
 from core.domain.services.history_service import HistoryService
 from modules.analytics.history_loader import load_attempts_and_pending_count
 from ui.utils.error_handler import show_warning_error
+
 _MODE_LABELS = {
     "EXAM": "Kiểm tra",
     "PRACTICE": "Luyện tập",
@@ -334,7 +334,7 @@ class ResultHistoryView(QWidget):
         self._btn_detail.setEnabled(selected)
         self._btn_delete.setEnabled(selected)
 
-    def _selected_attempt_id(self) -> Optional[int]:
+    def _selected_attempt_id(self) -> int | None:
         row = self._table.currentRow()
         if row < 0:
             return None

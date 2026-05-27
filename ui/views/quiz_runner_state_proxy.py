@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 from core.domain.services.quiz_service import QuizInfoDTO, QuizQuestionSnapshot
 
@@ -10,19 +9,19 @@ class QuizRunnerStateProxyMixin:
     """Property proxy layer preserving old attribute names on top of _state."""
 
     @property
-    def _pending_quiz_id(self) -> Optional[int]:
+    def _pending_quiz_id(self) -> int | None:
         return self._state.pending_quiz_id
 
     @_pending_quiz_id.setter
-    def _pending_quiz_id(self, value: Optional[int]) -> None:
+    def _pending_quiz_id(self, value: int | None) -> None:
         self._state.pending_quiz_id = value
 
     @property
-    def _quiz_info(self) -> Optional[QuizInfoDTO]:
+    def _quiz_info(self) -> QuizInfoDTO | None:
         return self._state.quiz_info
 
     @_quiz_info.setter
-    def _quiz_info(self, value: Optional[QuizInfoDTO]) -> None:
+    def _quiz_info(self, value: QuizInfoDTO | None) -> None:
         self._state.quiz_info = value
 
     @property
@@ -42,11 +41,11 @@ class QuizRunnerStateProxyMixin:
         self._state.mode = value
 
     @property
-    def _attempt_id(self) -> Optional[int]:
+    def _attempt_id(self) -> int | None:
         return self._state.attempt_id
 
     @_attempt_id.setter
-    def _attempt_id(self, value: Optional[int]) -> None:
+    def _attempt_id(self, value: int | None) -> None:
         self._state.attempt_id = value
 
     @property
@@ -98,9 +97,9 @@ class QuizRunnerStateProxyMixin:
         self._state.submitter_id = value
 
     @property
-    def _started_at(self) -> Optional[datetime]:
+    def _started_at(self) -> datetime | None:
         return self._state.started_at
 
     @_started_at.setter
-    def _started_at(self, value: Optional[datetime]) -> None:
+    def _started_at(self, value: datetime | None) -> None:
         self._state.started_at = value

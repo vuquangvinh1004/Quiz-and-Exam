@@ -113,7 +113,7 @@ class PendingGSheetsDialog(QDialog):
                 else "—"
             )
             try:
-                from datetime import datetime, timezone
+                from datetime import datetime
                 dt = datetime.fromisoformat(item.queued_at)
                 dt_local = dt.astimezone()
                 ts = dt_local.strftime("%d/%m/%Y %H:%M")

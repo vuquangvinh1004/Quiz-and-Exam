@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -27,8 +26,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.utils.error_mapper import map_exception_to_user_message
 from core.domain.services.submission_service import SubmissionSettings
+from core.utils.error_mapper import map_exception_to_user_message
 from core.utils.logger import get_logger
 from ui.facades.submission_settings_facade import SubmissionSettingsFacade
 from ui.styles import apply_checkbox_style

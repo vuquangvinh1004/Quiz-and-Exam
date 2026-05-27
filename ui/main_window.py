@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import importlib
 
-from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -34,7 +33,6 @@ from PySide6.QtWidgets import (
 from config.paths import APP_DIR
 from config.settings import settings
 from ui.styles.themes import get_stylesheet
-
 
 # Nav item definitions: (label, module_path, class_name)
 # Views are loaded lazily on first navigation to reduce startup time.

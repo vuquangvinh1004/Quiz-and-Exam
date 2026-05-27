@@ -7,7 +7,6 @@ from __future__ import annotations
 from PySide6.QtWidgets import QCheckBox, QLineEdit, QRadioButton, QVBoxLayout, QWidget
 
 from core.domain.services.quiz_service import QuizQuestionSnapshot
-from core.utils.constants import BLANK_PLACEHOLDER
 from core.utils.validators import count_blank_placeholders
 
 

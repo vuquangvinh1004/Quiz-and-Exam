@@ -7,14 +7,11 @@ Requires: pytest-qt (pytestqt)
 """
 from __future__ import annotations
 
-import os
 import pytest
-
-# Force offscreen rendering so tests can run in CI / headless environments
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
 from PySide6.QtWidgets import QApplication
 
+from core.database.connection import create_db_engine, init_db
+from core.database.session import reset_session_factory
 from ui.views.dashboard_view import DashboardView
 from ui.views.import_view import ImportView
 from ui.views.question_bank_view import QuestionBankView
@@ -22,7 +19,6 @@ from ui.views.quiz_builder_view import QuizBuilderView
 from ui.views.quiz_runner_view import QuizRunnerView
 from ui.views.result_history_view import ResultHistoryView
 from ui.views.settings_view import SettingsView
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -33,6 +29,20 @@ def qapp_instance():
     """Module-scoped QApplication for all smoke tests."""
     app = QApplication.instance() or QApplication([])
     yield app
+
+
+@pytest.fixture(scope="module", autouse=True)
+def ui_smoke_db(tmp_path_factory):
+    """Use an initialized isolated DB so smoke tests are order-independent."""
+    db_path = tmp_path_factory.mktemp("ui_smoke_db") / "ui_smoke.db"
+    engine = create_db_engine(db_path=db_path)
+    try:
+        init_db(engine)
+    finally:
+        engine.dispose()
+
+    reset_session_factory(db_path=db_path)
+    yield
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +110,6 @@ class TestQuizBuilderViewSmoke:
         assert view is not None
 
     def test_has_quiz_started_signal(self, qapp_instance):
-        from PySide6.QtCore import Signal
         view = QuizBuilderView()
         assert hasattr(view, "quiz_started")
 

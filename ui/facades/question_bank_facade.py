@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from core.database.models import Question, QuestionBank
+from core.database.models import Question
 from core.database.session import get_session
 from core.domain.services.question_service import QuestionEditData, QuestionService
 

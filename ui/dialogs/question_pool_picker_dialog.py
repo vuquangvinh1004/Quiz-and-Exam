@@ -17,8 +17,8 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
-    QHeaderView,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QMessageBox,
     QTableWidget,
@@ -27,8 +27,8 @@ from PySide6.QtWidgets import (
 )
 
 from core.database.models import Question
-from ui.facades.question_bank_facade import QuestionBankFacade
 from modules.quiz_builder.quota_allocator import chapter_key
+from ui.facades.question_bank_facade import QuestionBankFacade
 from ui.styles import apply_checkbox_style
 
 _TYPE_LABEL = {

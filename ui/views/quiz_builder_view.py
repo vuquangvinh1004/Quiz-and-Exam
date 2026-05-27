@@ -5,11 +5,11 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QCheckBox,
-    QFrame,
     QFormLayout,
-    QHeaderView,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QMessageBox,
     QPushButton,
@@ -23,15 +23,15 @@ from PySide6.QtWidgets import (
 
 from core.database.models import Question
 from core.database.session import get_session
+from core.domain.services.quiz_service import QuizCreationSnapshot
 from modules.quiz_builder.quota_allocator import (
     build_inventory,
     chapter_key,
 )
 from modules.quiz_builder.selector import QuestionSelector
-from core.domain.services.quiz_service import QuizCreationSnapshot
-from ui.views.quiz_builder_quota_support import refresh_quota_warnings, sync_quota_availability
 from ui.dialogs.question_pool_picker_dialog import QuestionPoolPickerDialog
 from ui.styles import apply_checkbox_style
+from ui.views.quiz_builder_quota_support import refresh_quota_warnings, sync_quota_availability
 from ui.widgets.bank_combo import BankCombo
 from ui.widgets.exam_export_panel import ExamExportPanel, ExportSelectionState
 
