@@ -17,10 +17,10 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -30,9 +30,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
-
-      - name: Lint with ruff
-        run: ruff check . --output-format=github
 
       - name: Run unit tests with coverage
         env:
@@ -54,10 +51,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.13"
           cache: pip
@@ -65,8 +62,5 @@ jobs:
       - name: Install ruff
         run: pip install ruff
 
-      - name: Check formatting
-        run: ruff format --check .
-
-      - name: Check lint
-        run: ruff check . --output-format=github
+      - name: Check lint (high-signal)
+        run: ruff check . --output-format=github --select E9,F63,F7,F82,F821

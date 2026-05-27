@@ -14,6 +14,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
+    QDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -25,7 +26,6 @@ from PySide6.QtWidgets import (
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
-    QToolBar,
     QVBoxLayout,
     QWidget,
 )

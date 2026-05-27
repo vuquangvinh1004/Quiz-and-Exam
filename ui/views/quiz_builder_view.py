@@ -28,6 +28,7 @@ from modules.quiz_builder.quota_allocator import (
     chapter_key,
 )
 from modules.quiz_builder.selector import QuestionSelector
+from core.domain.services.quiz_service import QuizCreationSnapshot
 from ui.views.quiz_builder_quota_support import refresh_quota_warnings, sync_quota_availability
 from ui.dialogs.question_pool_picker_dialog import QuestionPoolPickerDialog
 from ui.styles import apply_checkbox_style
@@ -404,6 +405,13 @@ class QuizBuilderView(QWidget):
             for key, spin in source.items()
             if spin.value() > 0
         }
+
+    def _build_creation_snapshots(self, questions: list[Question]) -> list[QuizCreationSnapshot]:
+        """Keep typed create-quiz snapshot contract available at the view boundary."""
+        return self._selector.build_creation_snapshots(
+            questions,
+            shuffle_options=self._cb_shuffle_opts.isChecked(),
+        )
 
     def _clear_spin_warning(self, spin: QSpinBox) -> None:
         spin.setStyleSheet("")
