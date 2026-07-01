@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QInputDialog,
@@ -207,25 +208,28 @@ class ExamExportPanel(QGroupBox):
         self._exp_group_by_type.setChecked(True)
         exp_form.addRow("", self._exp_group_by_type)
 
-        self._exp_cb_instructions = QCheckBox("Kèm hướng dẫn làm bài")
+        self._exp_cb_instructions = QCheckBox("Hướng dẫn làm")
         self._exp_cb_instructions.setChecked(True)
-        self._exp_cb_answer_sheet = QCheckBox("Kèm phiếu trả lời")
+        self._exp_cb_answer_sheet = QCheckBox("Phiếu trả lời")
         self._exp_cb_answer_sheet.setChecked(True)
-        self._exp_cb_scoring = QCheckBox("Kèm quy định chấm điểm")
+        self._exp_cb_scoring = QCheckBox("Quy định chấm")
         self._exp_cb_scoring.setChecked(True)
         self._exp_cb_answer_key = QCheckBox("Kèm đáp án và thang điểm")
         self._exp_cb_answer_key.setChecked(True)
-        self._exp_cb_show_points = QCheckBox("Hiển thị điểm trên đề thi")
+        self._exp_cb_show_points = QCheckBox("Hiển thị điểm")
         self._exp_cb_show_points.setChecked(False)
-        self._exp_cb_statistics = QCheckBox("Kèm các bảng thống kê câu hỏi")
+        self._exp_cb_statistics = QCheckBox("Thống kê câu hỏi")
         self._exp_cb_statistics.setChecked(False)
-        self._exp_cb_cover_sheet = QCheckBox("Kèm cover sheet")
+        self._exp_cb_cover_sheet = QCheckBox("Cover sheet")
         self._exp_cb_cover_sheet.setChecked(False)
-        self._exp_cb_split_answer_key = QCheckBox("Tách file đáp án riêng")
+        self._exp_cb_split_answer_key = QCheckBox("Tách đáp án")
         self._exp_cb_split_answer_key.setChecked(False)
 
-        opt_row = QHBoxLayout()
-        for cb in (
+        opt_grid = QGridLayout()
+        opt_grid.setContentsMargins(0, 0, 0, 0)
+        opt_grid.setHorizontalSpacing(18)
+        opt_grid.setVerticalSpacing(6)
+        option_boxes = (
             self._exp_cb_instructions,
             self._exp_cb_answer_sheet,
             self._exp_cb_scoring,
@@ -234,11 +238,14 @@ class ExamExportPanel(QGroupBox):
             self._exp_cb_statistics,
             self._exp_cb_cover_sheet,
             self._exp_cb_split_answer_key,
-        ):
+        )
+        for cb in option_boxes:
             cb.setStyleSheet(_CB_STYLE)
-            opt_row.addWidget(cb)
-        opt_row.addStretch()
-        exp_form.addRow("Tùy chọn:", _wrap_layout(opt_row))
+        for idx, cb in enumerate(option_boxes):
+            opt_grid.addWidget(cb, idx // 2, idx % 2)
+        opt_grid.setColumnStretch(0, 1)
+        opt_grid.setColumnStretch(1, 1)
+        exp_form.addRow("Tùy chọn:", _wrap_layout(opt_grid))
 
         self._exp_watermark = QLineEdit()
         self._exp_watermark.setPlaceholderText("Ví dụ: NỘI BỘ / DRAFT / KHÔNG PHÁT TÁN")
@@ -706,13 +713,13 @@ class ExamExportPanel(QGroupBox):
     ) -> list[str]:
         return [
             f"Trang bìa: {'Có' if render_config.show_cover_sheet else 'Không'}",
-            f"Hướng dẫn làm bài: {'Có' if render_config.show_instructions else 'Không'}",
+            f"Hướng dẫn làm: {'Có' if render_config.show_instructions else 'Không'}",
             f"Phiếu trả lời: {'Có' if render_config.show_answer_sheet else 'Không'}",
-            f"Quy định chấm điểm: {'Có' if render_config.show_scoring_rules else 'Không'}",
+            f"Quy định chấm: {'Có' if render_config.show_scoring_rules else 'Không'}",
             f"Đáp án trong file đề: {'Không' if separate_answer_key else ('Có' if render_config.show_answer_key else 'Không')}",
-            f"Hiển thị điểm trên đề thi: {'Có' if render_config.show_question_points else 'Không'}",
-            f"Bảng thống kê câu hỏi: {'Có' if render_config.show_question_statistics else 'Không'}",
-            f"File đáp án riêng: {'Có' if separate_answer_key else 'Không'}",
+            f"Hiển thị điểm: {'Có' if render_config.show_question_points else 'Không'}",
+            f"Thống kê câu hỏi: {'Có' if render_config.show_question_statistics else 'Không'}",
+            f"Tách đáp án: {'Có' if separate_answer_key else 'Không'}",
             f"Dấu mờ: {render_config.watermark_text or '(không có)'}",
             f"Phân nhóm theo loại câu: {'Có' if render_config.group_by_type else 'Không'}",
         ]
