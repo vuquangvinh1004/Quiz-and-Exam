@@ -16,6 +16,22 @@ from sqlalchemy.orm import Session
 from core.database.models import Question
 from core.domain.services.quiz_service import QuizCreationSnapshot
 
+_DIFFICULTY_FILTER_MAP = {
+    "Nhớ": ("Nhớ", "easy"),
+    "Hiểu": ("Hiểu", "medium"),
+    "Vận dụng": ("Vận dụng", "hard"),
+    "Phân tích": ("Phân tích",),
+    "Đánh giá": ("Đánh giá",),
+    "Sáng tạo": ("Sáng tạo",),
+}
+
+
+def _expand_difficulties(difficulties: list[str]) -> list[str]:
+    expanded: list[str] = []
+    for diff in difficulties:
+        expanded.extend(_DIFFICULTY_FILTER_MAP.get(diff, (diff,)))
+    return expanded
+
 
 class QuestionSelector:
     """Selects and prepares questions for a quiz snapshot."""
@@ -47,7 +63,7 @@ class QuestionSelector:
         if question_types:
             q = q.filter(Question.question_type.in_(question_types))
         if difficulties:
-            q = q.filter(Question.difficulty.in_(difficulties))
+            q = q.filter(Question.difficulty.in_(_expand_difficulties(difficulties)))
         if chapters:
             q = q.filter(Question.category.in_(chapters))
         if candidate_question_ids:
@@ -74,7 +90,7 @@ class QuestionSelector:
         if question_types:
             q = q.filter(Question.question_type.in_(question_types))
         if difficulties:
-            q = q.filter(Question.difficulty.in_(difficulties))
+            q = q.filter(Question.difficulty.in_(_expand_difficulties(difficulties)))
         if chapters:
             q = q.filter(Question.category.in_(chapters))
         if candidate_question_ids:
@@ -106,11 +122,14 @@ class QuestionSelector:
                 "hint": q.hint or "",
                 "explanation": q.explanation or "",
                 "point_value": q.point_value or 1.0,
+                "difficulty": q.difficulty or "",
+                "learning_outcome_code": q.learning_outcome_code or "",
+                "category": q.category or "",
                 # Matching config for BLANK/SA
                 "case_sensitive": q.case_sensitive,
                 "trim_whitespace": q.trim_whitespace,
             }
-            if q.question_type in ("MC", "MA"):
+            if q.question_type in ("MC", "MA", "TF"):
                 opts = [
                     {
                         "key": o.option_key,

@@ -1,7 +1,7 @@
 """Dialog for choosing submission destination and executing submission.
 
-Shown only in EXAM mode after the user clicks 'Nộp bài'.
-Practice and Study modes use a separate result-summary dialog (no submission).
+Shown only in Kiểm tra mode after the user clicks 'Nộp bài'.
+Luyện tập and Ôn tập modes use a separate result-summary dialog (no submission).
 
 Submission modes (from SubmissionSettings.mode):
   "none"   – nothing configured; user can still choose ad-hoc options here.
@@ -125,7 +125,7 @@ class _SubmissionWorker(QObject):
 # ---------------------------------------------------------------------------
 
 class SubmitDialog(QDialog):
-    """Dialog to choose submission destination and execute EXAM submission."""
+    """Dialog to choose submission destination and execute kết quả bài kiểm tra."""
 
     def __init__(
         self,
@@ -170,7 +170,7 @@ class SubmitDialog(QDialog):
         layout.addWidget(summary)
 
         # -- Email group --
-        self._email_group = QGroupBox("Nộp bài qua Email")
+        self._email_group = QGroupBox("Nộp bài qua email")
         self._email_group.setCheckable(True)
         self._email_group.setChecked(False)
         email_layout = QFormLayout(self._email_group)

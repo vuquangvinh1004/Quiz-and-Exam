@@ -101,6 +101,15 @@ def test_export_panel_uses_typed_export_snapshots_for_renderer() -> None:
     )
 
 
+def test_export_panel_uses_facade_instead_of_direct_session() -> None:
+    """Phase-1 guardrail: export panel should not open DB sessions directly."""
+    path = Path("ui/widgets/exam_export_panel.py")
+    text = path.read_text(encoding="utf-8")
+    assert "get_session(" not in text, (
+        "ExamExportPanel must use QuizBuilderFacade instead of direct get_session()."
+    )
+
+
 def test_largest_view_file_under_500_lines() -> None:
     """Phase-4 KPI: largest view file should stay below 500 lines."""
     view_root = Path("ui/views")
@@ -168,6 +177,22 @@ def test_settings_and_question_bank_ui_use_facade_instead_of_direct_session() ->
     )
 
 
+def test_quiz_builder_view_uses_facade_instead_of_direct_session_or_models() -> None:
+    """Phase-1 guardrail: quiz builder view should not open sessions or import ORM models."""
+    path = Path("ui/views/quiz_builder_view.py")
+    text = path.read_text(encoding="utf-8")
+    forbidden = [
+        "get_session(",
+        "from core.database.models import Question",
+    ]
+    offenders = [pattern for pattern in forbidden if pattern in text]
+
+    assert not offenders, (
+        "QuizBuilderView must use QuizBuilderFacade instead of direct DB/model access: "
+        + ", ".join(offenders)
+    )
+
+
 def test_dashboard_and_submission_dialog_ui_use_facade_instead_of_direct_session() -> None:
     """Sprint-C guardrail: dashboard/submission settings UI files must not open sessions directly."""
     paths = [
@@ -184,4 +209,43 @@ def test_dashboard_and_submission_dialog_ui_use_facade_instead_of_direct_session
     assert not offenders, (
         "Migrated dashboard/submission settings UI must use facades instead of direct get_session(): "
         + ", ".join(offenders)
+    )
+
+
+def test_quiz_runner_setup_mixin_uses_facade_instead_of_direct_session() -> None:
+    """Phase-1 guardrail: runner setup mixin should not open DB sessions directly."""
+    path = Path("ui/views/quiz_runner_setup_mixin.py")
+    text = path.read_text(encoding="utf-8")
+    assert "get_session(" not in text, (
+        "QuizRunnerSetupMixin must use QuizBuilderFacade instead of direct get_session()."
+    )
+
+
+def test_result_history_view_uses_facade_instead_of_direct_session() -> None:
+    """Phase-1 guardrail: history view should not open DB sessions directly."""
+    path = Path("ui/views/result_history_view.py")
+    text = path.read_text(encoding="utf-8")
+    assert "get_session(" not in text, (
+        "ResultHistoryView must use HistoryFacade instead of direct get_session()."
+    )
+
+
+def test_main_window_uses_settings_facade_instead_of_direct_session() -> None:
+    """Phase-1 guardrail: main window should not read settings via direct DB session."""
+    path = Path("ui/main_window.py")
+    text = path.read_text(encoding="utf-8")
+    assert "get_session(" not in text, (
+        "MainWindow must use SettingsFacade instead of direct get_session()."
+    )
+    assert "SettingsFacade" in text, (
+        "MainWindow should depend on SettingsFacade for persisted theme loading."
+    )
+
+
+def test_bank_combo_uses_facade_instead_of_direct_session() -> None:
+    """Phase-1 guardrail: bank combo widget should not open DB sessions directly."""
+    path = Path("ui/widgets/bank_combo.py")
+    text = path.read_text(encoding="utf-8")
+    assert "get_session(" not in text, (
+        "BankCombo must use QuestionBankFacade instead of direct get_session()."
     )

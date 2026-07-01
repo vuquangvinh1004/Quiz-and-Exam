@@ -343,6 +343,24 @@ class TestCreateAttempt:
         with pytest.raises(ValueError):
             QuizService().create_attempt(db_session, 9999)
 
+    def test_create_attempt_persists_resume_metadata(self, db_session):
+        bank = _make_bank(db_session)
+        quiz = self._make_quiz(db_session, bank.id)
+
+        attempt = QuizService().create_attempt(
+            db_session,
+            quiz.id,
+            submitter_name="Nguyen Van A",
+            submitter_id="SV001",
+            remaining_seconds=540,
+        )
+
+        assert attempt.remaining_seconds == 540
+        assert json.loads(attempt.extra_data) == {
+            "submitter_name": "Nguyen Van A",
+            "submitter_id": "SV001",
+        }
+
 
 class TestGetQuizInfo:
 
@@ -420,6 +438,76 @@ class TestSaveAnswer:
         }
         assert aas[qq_ids[0]].is_answered is True
         assert aas[qq_ids[1]].is_answered is True
+
+    def test_autosave_progress_updates_remaining_seconds(self, db_session):
+        bank = _make_bank(db_session)
+        snaps = _full_snapshots_for_quiz(db_session, bank.id)
+        cfg = QuizConfig(title="AS2", bank_id=bank.id, mode="EXAM", time_limit_minutes=10, question_count=2)
+        quiz = QuizService().create_quiz(db_session, cfg, snaps)
+        attempt = QuizService().create_attempt(db_session, quiz.id, remaining_seconds=600)
+        qq_id = quiz.quiz_questions[0].id
+
+        QuizService().autosave_progress(
+            db_session,
+            attempt.id,
+            {qq_id: {"selected": "A"}},
+            575,
+        )
+
+        refreshed = db_session.get(Attempt, attempt.id)
+        assert refreshed.remaining_seconds == 575
+
+
+class TestResumableAttempt:
+
+    def test_get_resumable_attempt_returns_answers_and_metadata(self, db_session):
+        bank = _make_bank(db_session)
+        quiz = TestCreateAttempt()._make_quiz(db_session, bank.id)
+        svc = QuizService()
+        attempt = svc.create_attempt(
+            db_session,
+            quiz.id,
+            submitter_name="Le Thi B",
+            submitter_id="HS002",
+            remaining_seconds=321,
+        )
+        qq_id = quiz.quiz_questions[0].id
+        svc.save_answer(db_session, attempt.id, qq_id, {"selected": "A"})
+
+        resume = svc.get_resumable_attempt(db_session, quiz.id)
+
+        assert resume is not None
+        assert resume.attempt_id == attempt.id
+        assert resume.remaining_seconds == 321
+        assert resume.submitter_name == "Le Thi B"
+        assert resume.submitter_id == "HS002"
+        assert resume.answers == {qq_id: {"selected": "A"}}
+
+    def test_get_resumable_attempt_returns_latest_in_progress(self, db_session):
+        bank = _make_bank(db_session)
+        quiz = TestCreateAttempt()._make_quiz(db_session, bank.id)
+        svc = QuizService()
+
+        first = svc.create_attempt(db_session, quiz.id, remaining_seconds=500)
+        first.status = AttemptStatus.SUBMITTED.value
+        second = svc.create_attempt(db_session, quiz.id, remaining_seconds=450)
+
+        resume = svc.get_resumable_attempt(db_session, quiz.id)
+
+        assert resume is not None
+        assert resume.attempt_id == second.id
+        assert resume.remaining_seconds == 450
+
+    def test_delete_attempt_removes_in_progress_attempt(self, db_session):
+        bank = _make_bank(db_session)
+        quiz = TestCreateAttempt()._make_quiz(db_session, bank.id)
+        svc = QuizService()
+        attempt = svc.create_attempt(db_session, quiz.id)
+
+        deleted = svc.delete_attempt(db_session, attempt.id)
+
+        assert deleted is True
+        assert db_session.get(Attempt, attempt.id) is None
 
 
 # ---------------------------------------------------------------------------
@@ -734,7 +822,8 @@ class TestBuildSnapshots:
         mc = _make_mc_question(db_session, bank.id)
         snap = QuestionSelector().build_snapshots([mc])[0]
         for key in ("question_id", "content", "type", "hint", "explanation",
-                    "point_value", "case_sensitive", "trim_whitespace", "options",
+                    "point_value", "difficulty", "learning_outcome_code", "category",
+                    "case_sensitive", "trim_whitespace", "options",
                     "accepted_answers"):
             assert key in snap, f"Missing key in snapshot: {key}"
 

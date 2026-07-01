@@ -33,6 +33,10 @@ class QuizTimerController(QObject):
     def elapsed_seconds(self) -> int:
         return self._elapsed_seconds
 
+    @property
+    def remaining_seconds(self) -> int:
+        return max(0, self._time_limit_seconds - self._elapsed_seconds)
+
     def start(self, time_limit_seconds: int) -> None:
         """Start (or restart) the countdown from *time_limit_seconds*."""
         self._time_limit_seconds = time_limit_seconds

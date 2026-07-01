@@ -10,6 +10,8 @@ Tests:
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from core.database.models import Attempt, QuestionBank, Quiz
@@ -43,12 +45,14 @@ def _make_quiz(session, bank_id):
 def _make_attempt(
     session, quiz_id,
     status="SUBMITTED",
+    mode="EXAM",
     score=5.0, max_score=10.0,
     correct=5, incorrect=3, skipped=2,
+    submitted_at=None,
 ):
     a = Attempt(
         quiz_id=quiz_id,
-        mode="EXAM",
+        mode=mode,
         status=status,
         score=score,
         max_score=max_score,
@@ -56,6 +60,7 @@ def _make_attempt(
         correct_count=correct,
         incorrect_count=incorrect,
         skipped_count=skipped,
+        submitted_at=submitted_at,
     )
     session.add(a)
     session.flush()
@@ -182,3 +187,180 @@ class TestGetOverallStats:
         _make_attempt(db_session, quiz.id, score=3.0, max_score=10.0)   # 30%
         stats = AttemptStatistics.get_overall_stats(db_session)
         assert stats.best_score_pct == pytest.approx(100.0)
+
+    def test_mode_breakdown_counts_completed_attempts_only(self, db_session):
+        bank = _make_bank(db_session)
+        quiz = _make_quiz(db_session, bank.id)
+        _make_attempt(db_session, quiz.id, mode="EXAM", status="SUBMITTED")
+        _make_attempt(db_session, quiz.id, mode="PRACTICE", status="TIME_UP")
+        _make_attempt(db_session, quiz.id, mode="STUDY", status="COMPLETED")
+        _make_attempt(db_session, quiz.id, mode="EXAM", status="IN_PROGRESS")
+
+        breakdown = AttemptStatistics.get_mode_breakdown(db_session)
+
+        assert breakdown.exam_count == 1
+        assert breakdown.practice_count == 1
+        assert breakdown.study_count == 1
+
+    def test_recent_activity_returns_points_for_requested_window(self, db_session):
+        bank = _make_bank(db_session)
+        quiz = _make_quiz(db_session, bank.id)
+        now = datetime.now(timezone.utc)
+        _make_attempt(
+            db_session,
+            quiz.id,
+            status="SUBMITTED",
+            score=8.0,
+            max_score=10.0,
+            submitted_at=now - timedelta(days=1),
+        )
+        _make_attempt(
+            db_session,
+            quiz.id,
+            status="TIME_UP",
+            score=6.0,
+            max_score=10.0,
+            submitted_at=now - timedelta(days=3),
+        )
+
+        points = AttemptStatistics.get_recent_activity(db_session, days=5)
+
+        assert len(points) == 5
+        assert sum(point.attempts for point in points) == 2
+        assert any(point.avg_score_pct == pytest.approx(80.0) for point in points)
+        assert any(point.avg_score_pct == pytest.approx(60.0) for point in points)
+
+    def test_filtered_breakdown_supports_bank_quiz_and_days(self, db_session):
+        bank1 = _make_bank(db_session, "Bank1")
+        bank2 = _make_bank(db_session, "Bank2")
+        quiz1 = _make_quiz(db_session, bank1.id)
+        quiz2 = _make_quiz(db_session, bank2.id)
+        now = datetime.now(timezone.utc)
+        _make_attempt(
+            db_session,
+            quiz1.id,
+            mode="EXAM",
+            status="SUBMITTED",
+            submitted_at=now - timedelta(days=1),
+        )
+        _make_attempt(
+            db_session,
+            quiz1.id,
+            mode="PRACTICE",
+            status="SUBMITTED",
+            submitted_at=now - timedelta(days=10),
+        )
+        _make_attempt(
+            db_session,
+            quiz2.id,
+            mode="STUDY",
+            status="SUBMITTED",
+            submitted_at=now - timedelta(days=1),
+        )
+
+        breakdown = AttemptStatistics.get_filtered_mode_breakdown(
+            db_session,
+            bank_id=bank1.id,
+            quiz_id=quiz1.id,
+            days=7,
+        )
+        recent = AttemptStatistics.get_filtered_recent_activity(
+            db_session,
+            bank_id=bank1.id,
+            quiz_id=quiz1.id,
+            days=7,
+        )
+
+        assert breakdown.exam_count == 1
+        assert breakdown.practice_count == 0
+        assert breakdown.study_count == 0
+        assert sum(point.attempts for point in recent) == 1
+
+    def test_filtered_window_summary_and_bank_breakdown(self, db_session):
+        bank1 = _make_bank(db_session, "Bank Alpha")
+        bank2 = _make_bank(db_session, "Bank Beta")
+        quiz1 = _make_quiz(db_session, bank1.id)
+        quiz2 = _make_quiz(db_session, bank1.id)
+        quiz3 = _make_quiz(db_session, bank2.id)
+        now = datetime.now(timezone.utc)
+        _make_attempt(
+            db_session,
+            quiz1.id,
+            mode="EXAM",
+            score=8.0,
+            max_score=10.0,
+            submitted_at=now - timedelta(days=1),
+        )
+        _make_attempt(
+            db_session,
+            quiz2.id,
+            mode="PRACTICE",
+            score=6.0,
+            max_score=10.0,
+            submitted_at=now - timedelta(days=2),
+        )
+        _make_attempt(
+            db_session,
+            quiz3.id,
+            mode="STUDY",
+            score=9.0,
+            max_score=10.0,
+            submitted_at=now - timedelta(days=1),
+        )
+
+        summary = AttemptStatistics.get_filtered_window_summary(db_session, days=7)
+        breakdown = AttemptStatistics.get_filtered_bank_breakdown(db_session, days=7)
+
+        assert summary.total_attempts == 3
+        assert summary.active_banks == 2
+        assert summary.active_quizzes == 3
+        assert summary.avg_score_pct == pytest.approx(76.7, abs=0.1)
+        assert summary.best_score_pct == pytest.approx(90.0)
+        assert [row.bank_name for row in breakdown] == ["Bank Alpha", "Bank Beta"]
+        assert breakdown[0].attempt_count == 2
+        assert breakdown[0].quiz_count == 2
+        assert breakdown[0].avg_score_pct == pytest.approx(70.0)
+        assert breakdown[1].attempt_count == 1
+
+    def test_filtered_reporting_supports_custom_date_range(self, db_session):
+        bank = _make_bank(db_session, "Bank Date")
+        quiz = _make_quiz(db_session, bank.id)
+        now = datetime.now(timezone.utc)
+        _make_attempt(
+            db_session,
+            quiz.id,
+            status="SUBMITTED",
+            score=8.0,
+            max_score=10.0,
+            submitted_at=now - timedelta(days=1),
+        )
+        _make_attempt(
+            db_session,
+            quiz.id,
+            status="SUBMITTED",
+            score=5.0,
+            max_score=10.0,
+            submitted_at=now - timedelta(days=8),
+        )
+
+        start_date = (now - timedelta(days=2)).date()
+        end_date = now.date()
+        summary = AttemptStatistics.get_filtered_window_summary(
+            db_session,
+            bank_id=bank.id,
+            start_date=start_date,
+            end_date=end_date,
+            days=0,
+        )
+        recent = AttemptStatistics.get_filtered_recent_activity(
+            db_session,
+            bank_id=bank.id,
+            start_date=start_date,
+            end_date=end_date,
+            days=0,
+        )
+
+        assert summary.total_attempts == 1
+        assert summary.avg_score_pct == pytest.approx(80.0)
+        assert len(recent) == 3
+        assert sum(point.attempts for point in recent) == 1

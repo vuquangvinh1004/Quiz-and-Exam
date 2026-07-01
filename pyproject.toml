@@ -1,6 +1,7 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short --basetemp=.tmp_pytest"
+cache_dir = ".tmp_pytest_cache"
 markers = [
     "slow: performance tests that take significant time (deselect with '-m not slow')",
 ]

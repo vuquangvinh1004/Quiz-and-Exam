@@ -1,6 +1,6 @@
-"""Dialog to collect submitter name and ID before starting an EXAM attempt.
+"""Dialog to collect submitter name and ID before starting a bài kiểm tra attempt.
 
-Only shown in EXAM mode (ARCHITECTURE §7.2). Practice and Study modes do not
+Only shown in Kiểm tra mode (ARCHITECTURE §7.2). Luyện tập and Ôn tập modes do not
 require submitter identification.
 """
 from __future__ import annotations
@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 
 
 class SubmitterInfoDialog(QDialog):
-    """Collect 'Họ và tên' and 'ID / Mã số' before an exam starts."""
+    """Collect 'Họ và tên' and 'ID / Mã số' before a bài kiểm tra starts."""
 
     def __init__(self, quiz_title: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)

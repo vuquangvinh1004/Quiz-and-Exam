@@ -1,7 +1,7 @@
 """Question Editor Dialog – create or edit a single question.
 
-Supports all four question types (MC, MA, BLANK, SA) with a dynamic
-form that switches sections based on the selected type.
+Supports MC, MA, TF, BLANK, SA and ES with a dynamic form that switches
+sections based on the selected type.
 
 Design rules (ARCHITECTURE §2):
   - No business logic here; validation delegated to QuestionService.
@@ -34,20 +34,65 @@ from core.domain.services.question_service import QuestionEditData
 from core.utils.constants import (
     BLANK_PLACEHOLDER,
     VALID_OPTION_LABELS,
-    Difficulty,
     QuestionStatus,
     QuestionType,
 )
 from ui.facades.question_bank_facade import QuestionBankFacade
 from ui.styles import apply_checkbox_style
 
-_TYPE_LABELS = {
-    QuestionType.MULTIPLE_CHOICE: "Multiple Choice (1 đáp án đúng)",
-    QuestionType.MULTIPLE_ANSWER: "Multiple Answer (nhiều đáp án đúng)",
-    QuestionType.BLANK: "Điền vào chỗ trống (Blank)",
-    QuestionType.SHORT_ANSWER: "Trả lời ngắn (Short Answer)",
+_LEVELS_BY_TYPE: dict[QuestionType, tuple[str, ...]] = {
+    QuestionType.TRUE_FALSE: ("Nhớ", "Hiểu"),
+    QuestionType.MULTIPLE_CHOICE: ("Nhớ", "Hiểu", "Vận dụng"),
+    QuestionType.MULTIPLE_ANSWER: ("Nhớ", "Hiểu", "Vận dụng", "Phân tích"),
+    QuestionType.BLANK: ("Nhớ", "Hiểu", "Vận dụng", "Phân tích", "Đánh giá", "Sáng tạo"),
+    QuestionType.SHORT_ANSWER: ("Vận dụng", "Phân tích", "Đánh giá"),
+    QuestionType.ESSAY: ("Phân tích", "Đánh giá", "Sáng tạo"),
 }
-_TYPE_FROM_INDEX = list(_TYPE_LABELS.keys())
+_DEFAULT_LEVEL_BY_TYPE: dict[QuestionType, str] = {
+    QuestionType.TRUE_FALSE: "Nhớ",
+    QuestionType.MULTIPLE_CHOICE: "Nhớ",
+    QuestionType.MULTIPLE_ANSWER: "Nhớ",
+    QuestionType.BLANK: "Nhớ",
+    QuestionType.SHORT_ANSWER: "Vận dụng",
+    QuestionType.ESSAY: "Phân tích",
+}
+_LEVELS_ALL: tuple[str, ...] = (
+    "Nhớ",
+    "Hiểu",
+    "Vận dụng",
+    "Phân tích",
+    "Đánh giá",
+    "Sáng tạo",
+)
+_LEVEL_DEFAULT_SCORES: dict[str, float] = {
+    "Nhớ": 1.0,
+    "Hiểu": 2.0,
+    "Vận dụng": 4.0,
+    "Phân tích": 6.0,
+    "Đánh giá": 8.0,
+    "Sáng tạo": 10.0,
+}
+_LEGACY_DIFFICULTY_TO_LEVEL: dict[str, str] = {
+    "easy": "Nhớ",
+    "medium": "Hiểu",
+    "hard": "Vận dụng",
+}
+_TYPE_LABELS = {
+    QuestionType.MULTIPLE_CHOICE: "Trắc nghiệm 1 đáp án",
+    QuestionType.MULTIPLE_ANSWER: "Trắc nghiệm nhiều đáp án",
+    QuestionType.TRUE_FALSE: "Đúng/Sai",
+    QuestionType.BLANK: "Điền vào chỗ trống",
+    QuestionType.SHORT_ANSWER: "Trả lời ngắn",
+    QuestionType.ESSAY: "Tự luận",
+}
+_TYPE_FROM_INDEX = [
+    QuestionType.MULTIPLE_CHOICE,
+    QuestionType.MULTIPLE_ANSWER,
+    QuestionType.TRUE_FALSE,
+    QuestionType.BLANK,
+    QuestionType.SHORT_ANSWER,
+    QuestionType.ESSAY,
+]
 
 
 class QuestionEditorDialog(QDialog):
@@ -64,6 +109,10 @@ class QuestionEditorDialog(QDialog):
         self._question = question          # None → create mode
         self._facade = QuestionBankFacade()
         self._saved_id: int | None = None
+        self._bank_metadata = self._facade.get_bank_metadata(bank_id)
+        self._bank_clos = list(self._bank_metadata.course_learning_outcomes or []) if self._bank_metadata else []
+        self._syncing_score = False
+        self._syncing_level = False
 
         title = "Thêm câu hỏi" if question is None else "Sửa câu hỏi"
         self.setWindowTitle(title)
@@ -113,7 +162,7 @@ class QuestionEditorDialog(QDialog):
         self._content_edit = QTextEdit()
         self._content_edit.setPlaceholderText(
             "Nhập nội dung câu hỏi…\n"
-            "Với loại Blank, dùng ________ để đánh dấu chỗ trống."
+            f"Với loại Điền vào chỗ trống, dùng {BLANK_PLACEHOLDER} để đánh dấu chỗ trống."
         )
         self._content_edit.setFixedHeight(90)
         fl.addRow("Nội dung *:", self._content_edit)
@@ -122,22 +171,34 @@ class QuestionEditorDialog(QDialog):
         self._code_edit.setPlaceholderText("Tự động nếu để trống")
         fl.addRow("Mã câu hỏi:", self._code_edit)
 
+        self._learning_outcome_combo = QComboBox()
+        self._learning_outcome_combo.addItem("Không gắn CLO", userData="")
+        for row in self._bank_clos:
+            code = str(row.get("code", "")).strip()
+            description = str(row.get("description", "")).strip()
+            if not code:
+                continue
+            self._learning_outcome_combo.addItem(code, userData=code)
+            idx = self._learning_outcome_combo.count() - 1
+            self._learning_outcome_combo.setItemData(
+                idx,
+                description,
+                Qt.ItemDataRole.ToolTipRole,
+            )
+        fl.addRow("Chuẩn đầu ra:", self._learning_outcome_combo)
+
         self._category_edit = QLineEdit()
         fl.addRow("Chương:", self._category_edit)
 
         self._difficulty_combo = QComboBox()
-        for d in Difficulty:
-            self._difficulty_combo.addItem(d.value.capitalize(), userData=d.value)
-        self._difficulty_combo.setCurrentIndex(
-            self._difficulty_combo.findData(Difficulty.MEDIUM.value)
-        )
-        fl.addRow("Độ khó:", self._difficulty_combo)
+        self._difficulty_combo.currentIndexChanged.connect(self._apply_default_score_for_level)
+        fl.addRow("Mức độ:", self._difficulty_combo)
 
         self._score_spin = QDoubleSpinBox()
         self._score_spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
         self._score_spin.setRange(0.01, 100.0)
         self._score_spin.setSingleStep(0.5)
-        self._score_spin.setValue(1.0)
+        self._score_spin.setValue(_LEVEL_DEFAULT_SCORES["Nhớ"])
         fl.addRow("Điểm:", self._score_spin)
 
         self._status_combo = QComboBox()
@@ -172,8 +233,9 @@ class QuestionEditorDialog(QDialog):
             self._option_rows.append((lbl, edit, cb))
 
         mc_note = QLabel(
-            "<i>Multiple Choice: chọn đúng 1 ô 'Đúng'. "
-            "Multiple Answer: chọn ít nhất 2 ô 'Đúng'.</i>"
+            "<i>Trắc nghiệm 1 đáp án: chọn đúng 1 ô 'Đúng'. "
+            "Trắc nghiệm nhiều đáp án: chọn ít nhất 2 ô 'Đúng'. "
+            "Đúng/Sai: chỉ dùng 2 lựa chọn Đúng/Sai.</i>"
         )
         mc_note.setTextFormat(Qt.TextFormat.RichText)
         mc_note.setWordWrap(True)
@@ -198,8 +260,8 @@ class QuestionEditorDialog(QDialog):
         ans_fl.addRow("", self._trim_whitespace_cb)
 
         blank_hint = QLabel(
-            f"<i>Blank: Câu hỏi phải chứa ít nhất một <b>{BLANK_PLACEHOLDER}</b> làm chỗ trống "
-            f"(có thể dùng nhiều {BLANK_PLACEHOLDER} cho nhiều chỗ điền).</i>"
+            f"<i>Điền vào chỗ trống: câu hỏi phải chứa ít nhất một <b>{BLANK_PLACEHOLDER}</b> "
+            f"làm chỗ trống (có thể dùng nhiều {BLANK_PLACEHOLDER} cho nhiều chỗ điền).</i>"
         )
         blank_hint.setTextFormat(Qt.TextFormat.RichText)
         blank_hint.setWordWrap(True)
@@ -210,7 +272,7 @@ class QuestionEditorDialog(QDialog):
         aux = QGroupBox("Gợi ý và giải thích")
         aux_fl = QFormLayout(aux)
         self._hint_edit = QLineEdit()
-        self._hint_edit.setPlaceholderText("Hiển thị trong chế độ Luyện tập / Học tập")
+        self._hint_edit.setPlaceholderText("Hiển thị trong chế độ Luyện tập / Ôn tập")
         aux_fl.addRow("Gợi ý:", self._hint_edit)
         self._explanation_edit = QTextEdit()
         self._explanation_edit.setPlaceholderText("Giải thích sau khi kết thúc bài…")
@@ -238,10 +300,20 @@ class QuestionEditorDialog(QDialog):
 
     def _on_type_changed(self, _index: int) -> None:
         qt = self._type_combo.currentData()
-        is_mc_ma = qt in (QuestionType.MULTIPLE_CHOICE, QuestionType.MULTIPLE_ANSWER)
-        is_blank_sa = qt in (QuestionType.BLANK, QuestionType.SHORT_ANSWER)
+        is_mc_ma = qt in (
+            QuestionType.MULTIPLE_CHOICE,
+            QuestionType.MULTIPLE_ANSWER,
+            QuestionType.TRUE_FALSE,
+        )
+        is_blank_sa = qt in (
+            QuestionType.BLANK,
+            QuestionType.SHORT_ANSWER,
+            QuestionType.ESSAY,
+        )
         self._options_group.setVisible(is_mc_ma)
         self._answers_group.setVisible(is_blank_sa)
+        self._sync_option_rows(qt)
+        self._populate_level_options(qt, preferred=self._difficulty_combo.currentData())
 
     # ------------------------------------------------------------------
     # Load existing question
@@ -258,16 +330,20 @@ class QuestionEditorDialog(QDialog):
 
         self._content_edit.setPlainText(q.content or "")
         self._code_edit.setText(q.question_code or "")
+        clo_idx = self._learning_outcome_combo.findData(q.learning_outcome_code or "")
+        if clo_idx >= 0:
+            self._learning_outcome_combo.setCurrentIndex(clo_idx)
         self._category_edit.setText(q.category or "")
         self._hint_edit.setText(q.hint or "")
         self._explanation_edit.setPlainText(q.explanation or "")
-        self._score_spin.setValue(q.point_value or 1.0)
-        self._case_sensitive_cb.setChecked(q.case_sensitive)
-        self._trim_whitespace_cb.setChecked(q.trim_whitespace)
+        self._case_sensitive_cb.setChecked(bool(q.case_sensitive))
+        self._trim_whitespace_cb.setChecked(True if q.trim_whitespace is None else bool(q.trim_whitespace))
 
-        diff_idx = self._difficulty_combo.findData(q.difficulty or "medium")
+        diff_value = self._normalize_level_value(q.difficulty)
+        diff_idx = self._difficulty_combo.findData(diff_value)
         if diff_idx >= 0:
             self._difficulty_combo.setCurrentIndex(diff_idx)
+        self._score_spin.setValue(q.point_value or 1.0)
 
         status_val = "active" if q.is_active else "inactive"
         st_idx = self._status_combo.findData(status_val)
@@ -304,7 +380,7 @@ class QuestionEditorDialog(QDialog):
     def _on_save(self) -> None:
         qt: QuestionType = self._type_combo.currentData()
 
-        # Build options list for MC/MA
+        # Build options list for option-based types
         options: list[tuple[str, str, bool]] = []
         for label, (_, edit, cb) in zip(
             VALID_OPTION_LABELS,
@@ -325,10 +401,11 @@ class QuestionEditorDialog(QDialog):
             bank_id=self._bank_id,
             question_type=qt,
             content=self._content_edit.toPlainText(),
-            difficulty=self._difficulty_combo.currentData() or "medium",
+            difficulty=self._difficulty_combo.currentData() or "Nhớ",
             score=self._score_spin.value(),
             hint=self._hint_edit.text(),
             explanation=self._explanation_edit.toPlainText(),
+            learning_outcome_code=str(self._learning_outcome_combo.currentData() or ""),
             category=self._category_edit.text(),
             tags=self._tags_edit.text(),
             status=self._status_combo.currentData() or "active",
@@ -350,3 +427,68 @@ class QuestionEditorDialog(QDialog):
             QMessageBox.warning(self, "Lỗi nhập liệu", str(exc))
         except Exception as exc:
             QMessageBox.critical(self, "Lỗi lưu", f"Không thể lưu câu hỏi:\n{exc}")
+
+    def _apply_default_score_for_level(self, _index: int) -> None:
+        level = str(self._difficulty_combo.currentData() or "")
+        if level not in _LEVEL_DEFAULT_SCORES:
+            return
+        self._syncing_score = True
+        try:
+            self._score_spin.setValue(_LEVEL_DEFAULT_SCORES[level])
+        finally:
+            self._syncing_score = False
+
+    def _populate_level_options(
+        self,
+        question_type: QuestionType | None,
+        *,
+        preferred: str | None = None,
+    ) -> None:
+        levels = _LEVELS_BY_TYPE.get(question_type or QuestionType.BLANK, _LEVELS_ALL)
+        preferred_level = self._normalize_level_value(preferred) or _DEFAULT_LEVEL_BY_TYPE.get(
+            question_type or QuestionType.BLANK,
+            levels[0],
+        )
+        self._syncing_level = True
+        try:
+            self._difficulty_combo.blockSignals(True)
+            self._difficulty_combo.clear()
+            for level in levels:
+                self._difficulty_combo.addItem(level, userData=level)
+            idx = self._difficulty_combo.findData(preferred_level)
+            if idx < 0:
+                idx = 0
+            self._difficulty_combo.setCurrentIndex(idx)
+        finally:
+            self._difficulty_combo.blockSignals(False)
+            self._syncing_level = False
+        self._apply_default_score_for_level(self._difficulty_combo.currentIndex())
+
+    def _sync_option_rows(self, question_type: QuestionType | None) -> None:
+        visible_count = 6
+        labels = list(VALID_OPTION_LABELS)
+        if question_type == QuestionType.TRUE_FALSE:
+            visible_count = 2
+            labels = ["Đúng", "Sai"]
+        elif question_type == QuestionType.MULTIPLE_ANSWER:
+            visible_count = 6
+
+        for idx, (label_widget, edit, cb) in enumerate(self._option_rows):
+            is_visible = idx < visible_count
+            label_widget.setVisible(is_visible)
+            edit.setVisible(is_visible)
+            cb.setVisible(is_visible)
+            if is_visible:
+                label_widget.setText(f"{labels[idx]}.")
+                if question_type == QuestionType.TRUE_FALSE:
+                    edit.setPlaceholderText(f"Lựa chọn {labels[idx]}…")
+                else:
+                    edit.setPlaceholderText(f"Lựa chọn {VALID_OPTION_LABELS[idx]}…")
+            else:
+                edit.clear()
+                cb.setChecked(False)
+
+    @staticmethod
+    def _normalize_level_value(value: str | None) -> str:
+        raw = str(value or "").strip()
+        return _LEGACY_DIFFICULTY_TO_LEVEL.get(raw, raw)

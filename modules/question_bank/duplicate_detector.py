@@ -68,27 +68,50 @@ class DuplicateDetector:
     ) -> list[ImportIssue]:
         """Return issues for rows that collide with existing DB questions.
 
-        Performs two single queries (codes, texts) rather than N per-row
-        queries.
+        Narrows DB lookups to only the candidate codes / texts from the
+        incoming file instead of loading the whole questions table.
         """
         from core.database.models import Question
 
         issues: list[ImportIssue] = []
+        if not rows:
+            return issues
 
-        # Load existing questions in one pass
-        existing = (
-            session.query(
-                Question.question_code,
-                Question.content,
-                Question.question_type,
-            ).all()
-        )
+        row_codes = {
+            row.question_code.strip()
+            for row in rows
+            if row.question_code and row.question_code.strip()
+        }
+        row_texts = {
+            row.question_text.strip()
+            for row in rows
+            if row.question_text.strip()
+        }
+        row_types = {row.question_type.value for row in rows}
 
         db_codes: set[str] = set()
         db_texts: set[tuple[str, str]] = set()
-        for q_code, q_text, q_type in existing:
-            if q_code:
-                db_codes.add(q_code.strip())
+        if row_codes:
+            for (q_code,) in (
+                session.query(Question.question_code)
+                .filter(Question.question_code.in_(row_codes))
+                .all()
+            ):
+                if q_code:
+                    db_codes.add(q_code.strip())
+
+        existing_text_rows = (
+            session.query(Question.content, Question.question_type)
+            .filter(
+                Question.content.in_(row_texts),
+                Question.question_type.in_(row_types),
+            )
+            .all()
+            if row_texts and row_types
+            else []
+        )
+
+        for q_text, q_type in existing_text_rows:
             db_texts.add((q_text.strip(), q_type))
 
         for row in rows:

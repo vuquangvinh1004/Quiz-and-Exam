@@ -1,9 +1,9 @@
-"""Settings View.
+"""Màn cài đặt.
 
 Provides application settings management:
-  - General: theme switcher (Light / Dark) persisted to app_settings.
-  - Submission: email / folder delivery of EXAM results.
-  - Backup & Restore: local SQLite backup management.
+  - Cài đặt chung: đổi giao diện lưu vào app_settings.
+  - Nộp bài: gửi email hoặc lưu thư mục cho kết quả bài kiểm tra.
+  - Sao lưu & Phục hồi: quản lý sao lưu SQLite cục bộ.
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from ui.facades.settings_facade import SettingsFacade
 
 
 class SettingsView(QWidget):
-    """App settings: theme, submission config, backup/restore."""
+    """Cài đặt ứng dụng: giao diện, nộp bài, sao lưu/phục hồi."""
 
     # Emitted after the user applies a new theme so MainWindow can
     # update the QSS and status bar immediately.
@@ -61,10 +61,10 @@ class SettingsView(QWidget):
 
         # Theme row
         theme_row = QHBoxLayout()
-        theme_row.addWidget(QLabel("Giao diện (Theme):"))
+        theme_row.addWidget(QLabel("Giao diện:"))
         self._theme_combo = QComboBox()
-        self._theme_combo.addItem("Sáng (Light)", "light")
-        self._theme_combo.addItem("Tối (Dark)", "dark")
+        self._theme_combo.addItem("Sáng", "light")
+        self._theme_combo.addItem("Tối", "dark")
         self._theme_combo.setFixedWidth(160)
         theme_row.addWidget(self._theme_combo)
         theme_row.addStretch()
@@ -83,7 +83,7 @@ class SettingsView(QWidget):
         return group
 
     def _build_submission_group(self) -> QGroupBox:
-        group = QGroupBox("Nộp bài (Submission)")
+        group = QGroupBox("Nộp bài")
         inner = QVBoxLayout(group)
         inner.setSpacing(10)
 
@@ -96,7 +96,7 @@ class SettingsView(QWidget):
         inner.addWidget(desc)
 
         row = QHBoxLayout()
-        btn = QPushButton("Cài đặt Nộp bài...")
+        btn = QPushButton("Cấu hình nộp bài...")
         btn.setFixedHeight(36)
         btn.setFixedWidth(180)
         btn.clicked.connect(self._open_submission_settings)
@@ -126,13 +126,13 @@ class SettingsView(QWidget):
 
         btn_row = QHBoxLayout()
 
-        btn_backup = QPushButton("Tạo backup ngay")
+        btn_backup = QPushButton("Tạo sao lưu ngay")
         btn_backup.setFixedHeight(34)
         btn_backup.setFixedWidth(160)
         btn_backup.clicked.connect(self._on_create_backup)
         btn_row.addWidget(btn_backup)
 
-        btn_restore = QPushButton("Phục hồi từ backup...")
+        btn_restore = QPushButton("Phục hồi từ bản sao lưu...")
         btn_restore.setFixedHeight(34)
         btn_restore.setFixedWidth(180)
         btn_restore.clicked.connect(self._on_restore_backup)
@@ -147,7 +147,7 @@ class SettingsView(QWidget):
         return group
 
     # ------------------------------------------------------------------
-    # Show event: refresh displayed values from DB
+    # Khi màn hình được hiển thị, làm mới giá trị từ DB
     # ------------------------------------------------------------------
 
     def showEvent(self, event) -> None:  # noqa: N802
@@ -155,7 +155,7 @@ class SettingsView(QWidget):
         self.refresh()
 
     def refresh(self) -> None:
-        """Public refresh entrypoint for MainWindow F5 contract."""
+        """Điểm làm mới công khai cho contract F5 của MainWindow."""
         self._load_theme_from_db()
         self._refresh_submission_status()
 
@@ -169,7 +169,7 @@ class SettingsView(QWidget):
             pass
 
     # ------------------------------------------------------------------
-    # General settings handlers
+    # Xử lý cài đặt chung
     # ------------------------------------------------------------------
 
     def _apply_general_settings(self) -> None:
@@ -183,7 +183,7 @@ class SettingsView(QWidget):
             QMessageBox.warning(self, "Lỗi", f"Không thể lưu cài đặt:\n{exc}")
 
     # ------------------------------------------------------------------
-    # Submission settings
+    # Cài đặt nộp bài
     # ------------------------------------------------------------------
 
     def _open_submission_settings(self) -> None:
@@ -209,26 +209,26 @@ class SettingsView(QWidget):
             self._sub_status.setText("")
 
     # ------------------------------------------------------------------
-    # Backup / restore
+    # Sao lưu / phục hồi
     # ------------------------------------------------------------------
 
     def _on_create_backup(self) -> None:
         from config.paths import BACKUPS_DIR, DB_PATH
         try:
             dest = self._facade.create_backup(DB_PATH, BACKUPS_DIR)
-            self._lbl_backup_status.setText(f"Backup đã lưu: {dest.name}")
+            self._lbl_backup_status.setText(f"Bản sao lưu đã lưu: {dest.name}")
             QMessageBox.information(
-                self, "Backup thành công", f"Đã tạo backup:\n{dest}"
+                self, "Sao lưu thành công", f"Đã tạo bản sao lưu:\n{dest}"
             )
         except Exception as exc:
-            QMessageBox.warning(self, "Lỗi", f"Không thể tạo backup:\n{exc}")
+            QMessageBox.warning(self, "Lỗi", f"Không thể tạo bản sao lưu:\n{exc}")
 
     def _on_restore_backup(self) -> None:
         from config.paths import BACKUPS_DIR, DB_PATH
 
         backup_file_str, _ = QFileDialog.getOpenFileName(
             self,
-            "Chọn file backup",
+            "Chọn file sao lưu",
             str(BACKUPS_DIR),
             "SQLite Database (*.db)",
         )
@@ -241,8 +241,8 @@ class SettingsView(QWidget):
         confirm = QMessageBox.warning(
             self,
             "Xác nhận phục hồi",
-            f"⚠️  Thao tác này sẽ GHI ĐÈ toàn bộ dữ liệu hiện tại\nbằng file backup:\n\n{backup_file.name}\n\n"
-            "Dữ liệu hiện tại sẽ bị MẤT nếu chưa có backup.\n\n"
+            f"⚠️  Thao tác này sẽ GHI ĐÈ toàn bộ dữ liệu hiện tại\nbằng file sao lưu:\n\n{backup_file.name}\n\n"
+            "Dữ liệu hiện tại sẽ bị MẤT nếu chưa có bản sao lưu.\n\n"
             "Bạn có chắc chắn muốn phục hồi không?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,

@@ -10,14 +10,24 @@ from ui.views.quiz_runner_view import QuizRunnerView
 
 class _ControllerOK:
     def __init__(self) -> None:
-        self.calls: list[tuple[int, dict[int, dict]]] = []
+        self.calls: list[tuple[int, dict[int, dict], int | None]] = []
 
-    def autosave_answers(self, attempt_id: int, answers: dict[int, dict]) -> None:
-        self.calls.append((attempt_id, answers))
+    def autosave_progress(
+        self,
+        attempt_id: int,
+        answers: dict[int, dict],
+        remaining_seconds: int | None,
+    ) -> None:
+        self.calls.append((attempt_id, answers, remaining_seconds))
 
 
 class _ControllerFail:
-    def autosave_answers(self, attempt_id: int, answers: dict[int, dict]) -> None:
+    def autosave_progress(
+        self,
+        attempt_id: int,
+        answers: dict[int, dict],
+        remaining_seconds: int | None,
+    ) -> None:
         raise RuntimeError("db unavailable")
 
 
@@ -47,7 +57,7 @@ def test_autosave_skips_when_attempt_missing(qtbot) -> None:
     assert controller.calls == []
 
 
-def test_autosave_skips_when_answers_empty(qtbot) -> None:
+def test_autosave_persists_timer_state_without_answers(qtbot) -> None:
     view = QuizRunnerView()
     qtbot.addWidget(view)
 
@@ -55,10 +65,30 @@ def test_autosave_skips_when_answers_empty(qtbot) -> None:
     view._runner_controller = controller
     view._attempt_id = 123
     view._answers = {}
+    view._remaining_seconds = 410
 
     view._autosave()
 
-    assert controller.calls == []
+    assert controller.calls == [(123, {}, 410)]
+
+
+def test_autosave_saves_current_answer_before_persist(qtbot, monkeypatch) -> None:
+    view = QuizRunnerView()
+    qtbot.addWidget(view)
+
+    controller = _ControllerOK()
+    view._runner_controller = controller
+    view._attempt_id = 222
+    view._remaining_seconds = 300
+    view._quiz_questions = [
+        runner_module.QuizQuestionSnapshot(quiz_question_id=10, order=1, content="Q1", type="MC")
+    ]
+    monkeypatch.setattr(view, "_get_current_payload", lambda: {"selected": "B"})
+
+    view._autosave()
+
+    assert view._answers == {10: {"selected": "B"}}
+    assert controller.calls == [(222, {10: {"selected": "B"}}, 300)]
 
 
 def test_autosave_logs_warning_on_failure(qtbot, monkeypatch) -> None:

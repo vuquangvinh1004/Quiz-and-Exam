@@ -1,6 +1,6 @@
 """Unit tests for modules/quiz_runner/mode_policy.py (Phase 5).
 
-Tests all 8 ModePolicy static methods for each of the three quiz modes:
+Tests all ModePolicy static methods for each of the three quiz modes:
   EXAM, PRACTICE, STUDY.
 """
 from __future__ import annotations
@@ -154,6 +154,53 @@ class TestShowSubmissionDialog:
 
 
 # ---------------------------------------------------------------------------
+# resume / finalize resilience
+# ---------------------------------------------------------------------------
+
+class TestResumeAndFinalizeResilience:
+
+    def test_exam_requires_submitter_identity(self):
+        assert ModePolicy.requires_submitter_identity(EXAM) is True
+
+    def test_practice_does_not_require_submitter_identity(self):
+        assert ModePolicy.requires_submitter_identity(PRACTICE) is False
+
+    def test_exam_resume_requires_submitter_metadata(self):
+        assert ModePolicy.can_resume_attempt(
+            EXAM,
+            submitter_name="",
+            submitter_id="",
+            remaining_seconds=120,
+        ) is False
+
+    def test_exam_resume_with_metadata_and_time_is_allowed(self):
+        assert ModePolicy.can_resume_attempt(
+            EXAM,
+            submitter_name="Nguyen Van A",
+            submitter_id="SV001",
+            remaining_seconds=120,
+        ) is True
+
+    def test_timed_mode_resume_rejected_when_no_time_left(self):
+        assert ModePolicy.can_resume_attempt(
+            PRACTICE,
+            remaining_seconds=0,
+        ) is False
+
+    def test_study_resume_can_ignore_remaining_seconds(self):
+        assert ModePolicy.can_resume_attempt(STUDY, remaining_seconds=0) is True
+
+    def test_exam_locks_answers_after_time_up_finalize_failure(self):
+        assert ModePolicy.lock_answer_editing_after_time_up_finalize_failure(EXAM) is True
+
+    def test_practice_does_not_lock_answers_after_time_up_finalize_failure(self):
+        assert (
+            ModePolicy.lock_answer_editing_after_time_up_finalize_failure(PRACTICE)
+            is False
+        )
+
+
+# ---------------------------------------------------------------------------
 # Unknown/invalid mode safety
 # ---------------------------------------------------------------------------
 
@@ -176,3 +223,9 @@ class TestUnknownModeSafety:
 
     def test_unknown_mode_falls_back_to_per_question_end_result(self):
         assert ModePolicy.end_result_type("UNKNOWN") == "per_question"
+
+    def test_unknown_mode_does_not_require_submitter_identity(self):
+        assert ModePolicy.requires_submitter_identity("UNKNOWN") is False
+
+    def test_unknown_mode_resume_is_allowed_when_no_timer(self):
+        assert ModePolicy.can_resume_attempt("UNKNOWN", remaining_seconds=0) is True

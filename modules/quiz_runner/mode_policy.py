@@ -127,3 +127,41 @@ class ModePolicy:
         ARCHITECTURE §6.4, §7.2 rule 6.
         """
         return mode == QuizMode.EXAM.value
+
+    # ------------------------------------------------------------------
+    # Resume / finalize resilience
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def requires_submitter_identity(mode: str) -> bool:
+        """Whether the mode requires persisted submitter identity.
+
+        EXAM resume must preserve the original submitter metadata so the
+        recovered attempt remains attributable to the same person.
+        """
+        return mode == QuizMode.EXAM.value
+
+    @staticmethod
+    def can_resume_attempt(
+        mode: str,
+        *,
+        submitter_name: str = "",
+        submitter_id: str = "",
+        remaining_seconds: int | None = None,
+    ) -> bool:
+        """Return whether a persisted in-progress attempt is valid to resume."""
+        if mode == QuizMode.EXAM.value:
+            if not submitter_name.strip() or not submitter_id.strip():
+                return False
+        if ModePolicy.requires_timer(mode):
+            return remaining_seconds is None or remaining_seconds > 0
+        return True
+
+    @staticmethod
+    def lock_answer_editing_after_time_up_finalize_failure(mode: str) -> bool:
+        """Whether answers must stay locked when time is up but finalize failed.
+
+        EXAM should remain immutable once time has elapsed, even if the
+        persistence layer fails and the user must retry submission.
+        """
+        return mode == QuizMode.EXAM.value

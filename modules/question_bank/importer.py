@@ -4,8 +4,9 @@ Follows QUIZ_APP_IMPORT_FORMAT.md strictly:
 - Reads by column name, not position.
 - Strict mode: any ERROR-level issue sets has_errors=True and blocks commit.
 - Delimiter for multi-value fields: ||
-- Canonical placeholder for blank questions: [[blank]]
-- Legacy placeholder ________ is still accepted with a deprecation warning.
+  - Canonical placeholder for blank questions: [[blank]]
+  - Legacy placeholder ________ is still accepted with a deprecation warning.
+  - Question types supported: MC, MA, BLANK, TF, SA, ES.
 """
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ import csv
 import io
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from core.utils.constants import (
     BLANK_PLACEHOLDER,
@@ -32,6 +33,7 @@ from core.utils.validators import (
     count_blank_placeholders,
     validate_correct_answers_for_type,
 )
+from core.utils.logger import get_logger
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -51,6 +53,12 @@ OPTION_COLUMNS: dict[str, str] = {
 
 VALID_BOOL_TRUE = frozenset({"true", "1", "yes", "y"})
 VALID_BOOL_FALSE = frozenset({"false", "0", "no", "n"})
+DEFAULT_SOFT_ROW_LIMIT = 12_000
+DEFAULT_HARD_ROW_LIMIT = 30_000
+DEFAULT_SOFT_FILE_SIZE_BYTES = 3 * 1024 * 1024
+DEFAULT_HARD_FILE_SIZE_BYTES = 8 * 1024 * 1024
+
+logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -78,8 +86,8 @@ class ParsedQuestion:
     score: float
     hint: str | None
     explanation: str | None
-    options: dict[str, str]          # {A: text, B: text, ...} – empty for BLANK/SA
-    correct_answers: list[str]       # ['A'] for MC; ['A','C'] for MA; ['Hà Nội'] for BLANK/SA
+    options: dict[str, str]          # {A: text, B: text, ...} – empty for BLANK/SA/ES
+    correct_answers: list[str]       # ['A'] for MC/TF; ['A','C'] for MA; ['Hà Nội'] for BLANK/SA/ES
     status: str
     tags: list[str]
     case_sensitive: bool
@@ -117,13 +125,30 @@ class ParseResult:
 class QuestionFileParser:
     """Parse .csv or .xlsx question import files into ParseResult."""
 
+    def __init__(
+        self,
+        *,
+        soft_row_limit: int = DEFAULT_SOFT_ROW_LIMIT,
+        hard_row_limit: int = DEFAULT_HARD_ROW_LIMIT,
+        soft_file_size_bytes: int = DEFAULT_SOFT_FILE_SIZE_BYTES,
+        hard_file_size_bytes: int = DEFAULT_HARD_FILE_SIZE_BYTES,
+    ) -> None:
+        self._soft_row_limit = soft_row_limit
+        self._hard_row_limit = hard_row_limit
+        self._soft_file_size_bytes = soft_file_size_bytes
+        self._hard_file_size_bytes = hard_file_size_bytes
+
     def parse_file(self, path: Path) -> ParseResult:
         """Entry point: dispatch to CSV or XLSX reader based on file suffix."""
+        file_size_issues, hard_stop_result = self._check_file_size_budget(path)
+        if hard_stop_result is not None:
+            return hard_stop_result
+
         suffix = path.suffix.lower()
         if suffix == ".csv":
-            return self._parse_csv(path)
+            result = self._parse_csv(path)
         elif suffix in (".xlsx", ".xlsm"):
-            return self._parse_xlsx(path)
+            result = self._parse_xlsx(path)
         else:
             result = ParseResult()
             result.issues.append(ImportIssue(
@@ -133,7 +158,9 @@ class QuestionFileParser:
                     "Chỉ chấp nhận .csv và .xlsx."
                 ),
             ))
-            return result
+        result.issues.extend(file_size_issues)
+        result.issues.sort(key=lambda i: (i.row, i.severity))
+        return result
 
     # -----------------------------------------------------------------------
     # File readers
@@ -144,7 +171,6 @@ class QuestionFileParser:
             raw = path.read_bytes()
             text = raw.decode("utf-8-sig")   # handles BOM transparently
             reader = csv.DictReader(io.StringIO(text))
-            rows = list(reader)
             headers: list[str] = list(reader.fieldnames or [])
         except Exception as exc:
             result = ParseResult()
@@ -153,14 +179,14 @@ class QuestionFileParser:
                 message=f"Không thể đọc file CSV: {exc}",
             ))
             return result
-        return self._process_rows(headers, rows)
+        return self._process_rows(headers, reader)
 
     def _parse_xlsx(self, path: Path) -> ParseResult:
         try:
             import openpyxl
             wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
             ws = wb["questions"] if "questions" in wb.sheetnames else wb.active
-            rows_raw = list(ws.rows)
+            row_iter = ws.iter_rows()
         except Exception as exc:
             result = ParseResult()
             result.issues.append(ImportIssue(
@@ -169,7 +195,9 @@ class QuestionFileParser:
             ))
             return result
 
-        if not rows_raw:
+        try:
+            header_row = next(row_iter)
+        except StopIteration:
             result = ParseResult()
             result.issues.append(ImportIssue(
                 row=0, severity="ERROR", message="File Excel trống.",
@@ -178,30 +206,29 @@ class QuestionFileParser:
 
         headers = [
             str(cell.value).strip() if cell.value is not None else ""
-            for cell in rows_raw[0]
+            for cell in header_row
         ]
 
-        dict_rows: list[dict[str, Any]] = []
-        for row in rows_raw[1:]:
-            row_dict: dict[str, Any] = {}
-            for col_idx, cell in enumerate(row):
-                if col_idx < len(headers):
-                    val = cell.value
-                    row_dict[headers[col_idx]] = (
-                        str(val).strip() if val is not None else ""
-                    )
-            # Skip rows where every value is empty
-            if any(v for v in row_dict.values()):
-                dict_rows.append(row_dict)
+        def _iter_dict_rows() -> Iterable[dict[str, Any]]:
+            for row in row_iter:
+                row_dict: dict[str, Any] = {}
+                for col_idx, cell in enumerate(row):
+                    if col_idx < len(headers):
+                        val = cell.value
+                        row_dict[headers[col_idx]] = (
+                            str(val).strip() if val is not None else ""
+                        )
+                if any(v for v in row_dict.values()):
+                    yield row_dict
 
-        return self._process_rows(headers, dict_rows)
+        return self._process_rows(headers, _iter_dict_rows())
 
     # -----------------------------------------------------------------------
     # Core processing
     # -----------------------------------------------------------------------
 
     def _process_rows(
-        self, headers: list[str], rows: list[dict[str, Any]]
+        self, headers: list[str], rows: Iterable[dict[str, Any]]
     ) -> ParseResult:
         result = ParseResult()
 
@@ -211,8 +238,35 @@ class QuestionFileParser:
         if any(i.severity == "ERROR" for i in header_issues):
             return result  # Cannot continue without required columns
 
-        result.total_rows = len(rows)
+        soft_limit_warning_added = False
         for idx, row in enumerate(rows, start=1):
+            if idx > self._hard_row_limit:
+                result.issues.append(ImportIssue(
+                    row=0,
+                    severity="ERROR",
+                    column="file",
+                    message=(
+                        f"File có hơn {self._hard_row_limit} dòng dữ liệu. "
+                        "Vượt ngưỡng an toàn import hiện tại; vui lòng chia nhỏ file."
+                    ),
+                ))
+                logger.warning(
+                    "event=import_row_limit_exceeded rows=%s hard_limit=%s"
+                    % (idx, self._hard_row_limit)
+                )
+                break
+            if idx > self._soft_row_limit and not soft_limit_warning_added:
+                result.issues.append(ImportIssue(
+                    row=0,
+                    severity="WARNING",
+                    column="file",
+                    message=(
+                        f"File lớn ({idx}+ dòng). Preview/import có thể chậm hơn bình thường; "
+                        "hãy ưu tiên chạy trên máy ổn định và tránh đóng ứng dụng giữa chừng."
+                    ),
+                ))
+                soft_limit_warning_added = True
+            result.total_rows += 1
             # Skip completely blank rows
             if not any(str(v).strip() for v in row.values()):
                 result.total_rows -= 1
@@ -223,6 +277,48 @@ class QuestionFileParser:
                 result.parsed_questions.append(parsed)
 
         return result
+
+    def _check_file_size_budget(
+        self, path: Path
+    ) -> tuple[list[ImportIssue], ParseResult | None]:
+        try:
+            file_size = path.stat().st_size
+        except OSError:
+            return [], None
+
+        issues: list[ImportIssue] = []
+
+        if file_size > self._hard_file_size_bytes:
+            result = ParseResult()
+            result.issues.append(ImportIssue(
+                row=0,
+                severity="ERROR",
+                column="file",
+                message=(
+                    f"File quá lớn ({_format_size(file_size)}). "
+                    "Vượt ngưỡng an toàn import hiện tại; vui lòng chia nhỏ file."
+                ),
+            ))
+            logger.warning(
+                "event=import_file_too_large path=%s size=%s hard_limit=%s"
+                % (path.name, file_size, self._hard_file_size_bytes)
+            )
+            return [], result
+        if file_size > self._soft_file_size_bytes:
+            issues.append(ImportIssue(
+                row=0,
+                severity="WARNING",
+                column="file",
+                message=(
+                    f"File khá lớn ({_format_size(file_size)}). "
+                    "Preview/import có thể chậm hơn bình thường; hãy tránh chạy đồng thời tác vụ nặng khác."
+                ),
+            ))
+            logger.warning(
+                "event=import_file_size_warning path=%s size=%s soft_limit=%s"
+                % (path.name, file_size, self._soft_file_size_bytes)
+            )
+        return issues, None
 
     def _validate_headers(self, headers: list[str]) -> list[ImportIssue]:
         issues: list[ImportIssue] = []
@@ -518,6 +614,36 @@ class QuestionFileParser:
                     ),
                 ))
 
+        elif question_type == QuestionType.TRUE_FALSE:
+            if len(options) != 2:
+                issues.append(ImportIssue(
+                    row=row_num, severity="ERROR", column="option_a",
+                    message="true_false cần đúng 2 lựa chọn (ví dụ option_a, option_b).",
+                ))
+            if has_placeholder:
+                issues.append(ImportIssue(
+                    row=row_num, severity="ERROR", column="question_text",
+                    message="true_false không được dùng placeholder BLANK trong question_text.",
+                ))
+            for err in validate_correct_answers_for_type(
+                question_type, correct_raw, present_labels
+            ):
+                issues.append(ImportIssue(
+                    row=row_num, severity="ERROR", column="correct_answers", message=err,
+                ))
+
+        elif question_type == QuestionType.ESSAY:
+            if has_placeholder:
+                issues.append(ImportIssue(
+                    row=row_num, severity="ERROR", column="question_text",
+                    message="essay không được dùng placeholder BLANK trong question_text.",
+                ))
+            if options:
+                issues.append(ImportIssue(
+                    row=row_num, severity="WARNING", column="option_a",
+                    message="essay không dùng option_a đến option_f; các cột này sẽ bị bỏ qua khi import.",
+                ))
+
         return issues
 
 
@@ -554,3 +680,11 @@ def _parse_bool(raw: str, *, default: bool) -> tuple[bool, str | None]:
         f"Giá trị boolean không hợp lệ: '{raw}'. "
         "Chấp nhận: true/false/1/0/yes/no."
     )
+
+
+def _format_size(size_bytes: int) -> str:
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    if size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    return f"{size_bytes / (1024 * 1024):.1f} MB"

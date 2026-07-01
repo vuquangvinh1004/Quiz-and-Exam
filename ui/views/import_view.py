@@ -1,11 +1,11 @@
-"""Import view: pick a CSV/XLSX file, choose a question bank, preview and commit.
+"""Màn nhập dữ liệu câu hỏi: chọn file CSV/XLSX, chọn ngân hàng, xem trước và ghi nhận.
 
 UI flow (QUIZ_APP_ARCHITECTURE.md §6.1):
-    1. User picks a .csv or .xlsx file.
-    2. User picks (or creates) a question bank.
-    3. User clicks "Xem trước" → ImportPreviewDialog opens.
-    4. Dialog shows ERROR / WARNING / INFO issues.
-    5. If no ERRORs, user confirms → questions written to DB.
+    1. Người dùng chọn file .csv hoặc .xlsx.
+    2. Người dùng chọn (hoặc tạo) ngân hàng câu hỏi.
+    3. Người dùng bấm "Xem trước" → mở ImportPreviewDialog.
+    4. Hộp thoại hiển thị các lỗi ERROR / WARNING / INFO.
+    5. Nếu không có ERROR, người dùng xác nhận → ghi câu hỏi vào DB.
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ from ui.utils.error_handler import show_critical_error
 
 
 class ImportView(QWidget):
-    """Import CSV / Excel file into a question bank."""
+    """Nhập file CSV / Excel vào ngân hàng câu hỏi."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -52,12 +52,12 @@ class ImportView(QWidget):
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(16)
 
-        title = QLabel("Import câu hỏi từ file CSV / Excel")
+        title = QLabel("Nhập câu hỏi từ file CSV / Excel")
         title.setObjectName("view_title")
         layout.addWidget(title)
 
         # Step 1 – File picker
-        file_group = QGroupBox("Bước 1 – Chọn file import")
+        file_group = QGroupBox("Bước 1 – Chọn file nhập")
         file_vl = QVBoxLayout(file_group)
         file_hl = QHBoxLayout()
         self._file_edit = QLineEdit()
@@ -119,7 +119,7 @@ class ImportView(QWidget):
     # ------------------------------------------------------------------
 
     def _load_banks(self) -> None:
-        """Reload bank combo from DB."""
+        """Tải lại danh sách ngân hàng từ DB."""
         try:
             self._banks = self._facade.load_banks()
         except (DatabaseError, QuizAppError) as exc:
@@ -157,7 +157,7 @@ class ImportView(QWidget):
     def _browse_file(self) -> None:
         path_str, _ = QFileDialog.getOpenFileName(
             self,
-            "Chọn file import câu hỏi",
+            "Chọn file nhập câu hỏi",
             "",
             "File câu hỏi (*.csv *.xlsx);;CSV files (*.csv);;Excel files (*.xlsx)",
         )
@@ -205,13 +205,13 @@ class ImportView(QWidget):
         try:
             parse_result = self._facade.preview_file(self._file_path)
         except (ImportError, DatabaseError, QuizAppError) as exc:
-            self._status_lbl.setText("Lỗi khi đọc file import.")
-            show_critical_error(self, "Lỗi import", "Không thể phân tích file.", exc=exc)
+            self._status_lbl.setText("Lỗi khi đọc file nhập.")
+            show_critical_error(self, "Lỗi nhập dữ liệu", "Không thể phân tích file.", exc=exc)
             self._preview_btn.setEnabled(True)
             return
         except Exception as exc:
-            self._status_lbl.setText("Lỗi hệ thống khi đọc file import.")
-            show_critical_error(self, "Lỗi import", "Không thể phân tích file.", exc=exc)
+            self._status_lbl.setText("Lỗi hệ thống khi đọc file nhập.")
+            show_critical_error(self, "Lỗi nhập dữ liệu", "Không thể phân tích file.", exc=exc)
             self._preview_btn.setEnabled(True)
             return
 
@@ -226,16 +226,16 @@ class ImportView(QWidget):
 
         if dlg.was_imported:
             self._status_lbl.setText(
-                f"✓ Import hoàn thành từ {self._file_path.name}. "
+                f"✓ Nhập dữ liệu hoàn thành từ {self._file_path.name}. "
                 "Xem kết quả trong Ngân hàng câu hỏi."
             )
         else:
-            self._status_lbl.setText("Import đã hủy hoặc bị chặn do lỗi.")
+            self._status_lbl.setText("Nhập dữ liệu đã hủy hoặc bị chặn do lỗi.")
 
         self._preview_btn.setEnabled(True)
 
     def _export_template(self, _link: str = "") -> None:
-        """Save an example CSV template to a user-chosen path."""
+        """Lưu file CSV template mẫu vào đường dẫn người dùng chọn."""
         path_str, _ = QFileDialog.getSaveFileName(
             self, "Lưu file template", "questions_template.csv", "CSV files (*.csv)"
         )
@@ -248,17 +248,17 @@ class ImportView(QWidget):
             "correct_answers,status,tags,case_sensitive,trim_whitespace\n"
         )
         examples = (
-            # Multiple Choice example
+            # Trắc nghiệm 1 đáp án
             "MC001,Thủ đô của Việt Nam là gì?,multiple_choice,Địa lý,easy,1,"
             "Gợi ý: trung tâm chính trị,Đáp án: Hà Nội,"
             "Hà Nội,Hồ Chí Minh,Đà Nẵng,Cần Thơ,,,A,active,địa lý,false,true\n"
-            # Multiple Answer example
+            # Trắc nghiệm nhiều đáp án
             "MA001,Những ngôn ngữ nào là kiểu thông dịch?,multiple_answer,CNTT,medium,1.5,"
             "Nghĩ đến Python, JS,,Python,Java,C++,JavaScript,,,A||D,active,cntt,false,true\n"
-            # Blank example
+            # Điền vào chỗ trống
             "BL001,Thủ đô của Việt Nam là [[blank]].,blank,Địa lý,easy,1,"
             "Gợi ý: bắt đầu bằng H,,,,,,,,Hà Nội||Ha Noi,active,địa lý,false,true\n"
-            # Short Answer example
+            # Trả lời ngắn
             "SA001,Viết tắt của Economic Order Quantity là gì?,short_answer,Logistics,easy,1,"
             "Gợi ý: 3 chữ cái,,,,,,,,EOQ||Economic Order Quantity,active,logistics,false,true\n"
         )

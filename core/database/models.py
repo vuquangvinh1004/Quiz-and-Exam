@@ -52,6 +52,8 @@ class QuestionBank(Base):
     subject: Mapped[Optional[str]] = mapped_column(Text)
     course_code: Mapped[Optional[str]] = mapped_column(Text)
     exam_title: Mapped[Optional[str]] = mapped_column(Text)
+    assessment_type: Mapped[Optional[str]] = mapped_column(Text)
+    course_learning_outcomes: Mapped[Optional[str]] = mapped_column(Text)  # JSON list
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.current_timestamp()
     )
@@ -71,6 +73,38 @@ class QuestionBank(Base):
     def __repr__(self) -> str:
         return f"<QuestionBank id={self.id} name={self.name!r}>"
 
+    def get_course_learning_outcomes(self) -> list[dict[str, str]]:
+        """Deserialize CLO metadata into a Python list."""
+        if not self.course_learning_outcomes:
+            return []
+        data = json.loads(self.course_learning_outcomes)
+        if not isinstance(data, list):
+            return []
+        items: list[dict[str, str]] = []
+        for row in data:
+            if not isinstance(row, dict):
+                continue
+            items.append(
+                {
+                    "code": str(row.get("code", "")).strip(),
+                    "description": str(row.get("description", "")).strip(),
+                }
+            )
+        return items
+
+    def set_course_learning_outcomes(self, items: list[dict[str, str]]) -> None:
+        """Serialize CLO metadata as JSON."""
+        cleaned: list[dict[str, str]] = []
+        for row in items:
+            code = str(row.get("code", "")).strip()
+            description = str(row.get("description", "")).strip()
+            if not code and not description:
+                continue
+            cleaned.append({"code": code, "description": description})
+        self.course_learning_outcomes = (
+            json.dumps(cleaned, ensure_ascii=False) if cleaned else None
+        )
+
 
 # ---------------------------------------------------------------------------
 # questions
@@ -82,7 +116,7 @@ class Question(Base):
     __tablename__ = "questions"
     __table_args__ = (
         CheckConstraint(
-            "question_type IN ('MC', 'MA', 'BLANK', 'SA')",
+            "question_type IN ('MC', 'MA', 'BLANK', 'TF', 'SA', 'ES')",
             name="ck_questions_type",
         ),
         Index("ix_questions_bank_id", "bank_id"),
@@ -98,6 +132,7 @@ class Question(Base):
     hint: Mapped[Optional[str]] = mapped_column(Text)
     explanation: Mapped[Optional[str]] = mapped_column(Text)
     difficulty: Mapped[Optional[str]] = mapped_column(Text)
+    learning_outcome_code: Mapped[Optional[str]] = mapped_column(Text)
     category: Mapped[Optional[str]] = mapped_column(Text)
     tags: Mapped[Optional[str]] = mapped_column(Text)
     # JSON string for BLANK/SA accepted answers; NULL for MC/MA

@@ -1,8 +1,8 @@
-"""Question Bank View – CRUD for banks and questions, search, filter.
+"""Màn Ngân hàng câu hỏi - CRUD cho ngân hàng và câu hỏi, tìm kiếm, lọc.
 
 Layout:
-  Left panel  : bank list with CRUD buttons
-  Right panel : question table with toolbar (add, edit, delete, search, filter)
+  Left panel  : danh sách ngân hàng với các nút CRUD
+  Right panel : bảng câu hỏi với thanh công cụ (thêm, sửa, xóa, tìm kiếm, lọc)
 
 Business rules in ARCHITECTURE §5.1 are enforced by QuestionService; this
 file only orchestrates UI interactions.
@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.database.models import Question
-from core.utils.constants import Difficulty, QuestionType
+from core.utils.constants import QuestionType
 from core.utils.logger import get_logger
 from ui.dialogs.bank_meta_dialog import BankMetaDialog
 from ui.dialogs.question_editor_dialog import QuestionEditorDialog
@@ -40,16 +40,39 @@ from ui.utils.error_handler import show_critical_error
 
 _logger = get_logger(__name__)
 
-_TYPE_SHORT = {
+_TYPE_LABEL = {
+    "MC": "Trắc nghiệm 1 đáp án",
+    "MA": "Trắc nghiệm nhiều đáp án",
+    "TF": "Đúng/Sai",
+    "BLANK": "Điền vào chỗ trống",
+    "SA": "Trả lời ngắn",
+    "ES": "Tự luận",
+}
+_TYPE_TABLE_LABEL = {
     "MC": "MC",
     "MA": "MA",
+    "TF": "T/F",
     "BLANK": "Blank",
     "SA": "SA",
+    "ES": "ES",
+}
+_QUESTION_LEVELS: tuple[str, ...] = (
+    "Nhớ",
+    "Hiểu",
+    "Vận dụng",
+    "Phân tích",
+    "Đánh giá",
+    "Sáng tạo",
+)
+_LEGACY_DIFFICULTY_TO_LEVEL: dict[str, str] = {
+    "easy": "Nhớ",
+    "medium": "Hiểu",
+    "hard": "Vận dụng",
 }
 
 
 class QuestionBankView(QWidget):
-    """Question bank management – CRUD, search, filter."""
+    """Quản lý ngân hàng câu hỏi - CRUD, tìm kiếm, lọc."""
 
     refresh_requested = Signal()   # emitted when user clicks 'Cập nhật'
 
@@ -148,15 +171,15 @@ class QuestionBankView(QWidget):
         self._search_edit.textChanged.connect(self._refresh_questions)
 
         self._type_filter = QComboBox()
-        self._type_filter.addItem("Tất cả loại", userData=None)
+        self._type_filter.addItem("Tất cả loại câu hỏi", userData=None)
         for qt in QuestionType:
-            self._type_filter.addItem(_TYPE_SHORT.get(qt.value, qt.value), userData=qt.value)
+            self._type_filter.addItem(_TYPE_LABEL.get(qt.value, qt.value), userData=qt.value)
         self._type_filter.currentIndexChanged.connect(self._refresh_questions)
 
         self._diff_filter = QComboBox()
-        self._diff_filter.addItem("Tất cả độ khó", userData=None)
-        for d in Difficulty:
-            self._diff_filter.addItem(d.value.capitalize(), userData=d.value)
+        self._diff_filter.addItem("Tất cả mức độ", userData=None)
+        for level in _QUESTION_LEVELS:
+            self._diff_filter.addItem(level, userData=level)
         self._diff_filter.currentIndexChanged.connect(self._refresh_questions)
 
         tb_hl.addWidget(add_q_btn)
@@ -171,27 +194,32 @@ class QuestionBankView(QWidget):
         vl.addLayout(tb_hl)
 
         # Table
-        self._q_table = QTableWidget(0, 8)
+        self._q_table = QTableWidget(0, 9)
         self._q_table.setHorizontalHeaderLabels(
-            ["STT", "Mã", "Nội dung", "Chương", "Loại", "Độ khó", "Điểm", "Trạng thái"]
+            ["STT", "Mã", "Nội dung", "Chương", "CLO", "Mức độ", "Loại", "Điểm", "Trạng thái"]
         )
         self._q_table.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.ResizeMode.Stretch
         )
         self._q_table.horizontalHeader().setDefaultSectionSize(90)
-        self._q_table.setColumnWidth(0, 50)
-        self._q_table.setColumnWidth(1, 90)
-        self._q_table.setColumnWidth(3, 120)
-        self._q_table.setColumnWidth(4, 80)
-        self._q_table.setColumnWidth(5, 80)
-        self._q_table.setColumnWidth(6, 60)
-        self._q_table.setColumnWidth(7, 90)
+        self._q_table.setColumnWidth(0, 44)
+        self._q_table.setColumnWidth(1, 82)
+        self._q_table.setColumnWidth(3, 78)
+        self._q_table.setColumnWidth(4, 96)
+        self._q_table.setColumnWidth(5, 82)
+        self._q_table.setColumnWidth(6, 84)
+        self._q_table.setColumnWidth(7, 54)
+        self._q_table.setColumnWidth(8, 100)
         self._q_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._q_table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
         )
         self._q_table.setAlternatingRowColors(True)
+        self._q_table.setWordWrap(True)
+        self._q_table.setTextElideMode(Qt.TextElideMode.ElideRight)
         self._q_table.verticalHeader().setVisible(False)
+        self._q_table.verticalHeader().setDefaultSectionSize(58)
+        self._q_table.verticalHeader().setMinimumSectionSize(54)
         self._q_table.horizontalHeader().setSortIndicatorShown(True)
         self._q_table.setSortingEnabled(True)
         self._q_table.doubleClicked.connect(self._edit_question)
@@ -211,12 +239,17 @@ class QuestionBankView(QWidget):
         self._bank_list.blockSignals(True)
         self._bank_list.clear()
         try:
-            bank_data = self._facade.list_banks()
+            bank_data = self._facade.list_bank_overview_items()
         except Exception:
             bank_data = []
-        for bid, bname in bank_data:
-            item = QListWidgetItem(bname)
-            item.setData(Qt.ItemDataRole.UserRole, bid)
+        for row in bank_data:
+            item = QListWidgetItem(
+                f"{row['name']}\n{self._format_bank_context(row)}"
+            )
+            item.setData(Qt.ItemDataRole.UserRole, row["id"])
+            item.setData(Qt.ItemDataRole.UserRole + 1, row["name"])
+            item.setData(Qt.ItemDataRole.UserRole + 2, self._format_bank_context(row))
+            item.setToolTip(self._format_bank_tooltip(row))
             self._bank_list.addItem(item)
         self._bank_list.blockSignals(False)
 
@@ -262,34 +295,41 @@ class QuestionBankView(QWidget):
         for r, q in enumerate(questions):
             self._q_table.setItem(r, 0, _cell(str(r + 1), center=True))
             self._q_table.setItem(r, 1, _cell(q.question_code or ""))
-            preview = (q.content or "")[:100]
-            self._q_table.setItem(r, 2, _cell(preview))
+            preview = (q.content or "")[:180]
+            content_item = _cell(preview)
+            content_item.setToolTip(q.content or "")
+            self._q_table.setItem(r, 2, content_item)
             self._q_table.setItem(
-                r, 3, _cell(q.category or "", center=False)
+                r, 3, _cell(q.category or "", center=True)
             )
             self._q_table.setItem(
-                r, 4, _cell(_TYPE_SHORT.get(q.question_type, q.question_type), center=True)
+                r, 4, _cell(q.learning_outcome_code or "", center=True)
             )
-            self._q_table.setItem(r, 5, _cell((q.difficulty or "").capitalize(), center=True))
-            self._q_table.setItem(r, 6, _cell(str(q.point_value or 1.0), center=True))
+            self._q_table.setItem(
+                r, 5, _cell(self._display_level(q.difficulty), center=True)
+            )
+            self._q_table.setItem(
+                r, 6, _cell(_TYPE_TABLE_LABEL.get(q.question_type, q.question_type), center=True)
+            )
+            self._q_table.setItem(r, 7, _cell(str(q.point_value or 1.0), center=True))
             # Trạng thái
             if q.is_active:
-                status_item = _cell("✓ Active", center=True)
+                status_item = _cell("✓ Đang dùng", center=True)
                 status_item.setForeground(QColor("#27ae60"))   # green
             else:
-                status_item = _cell("✗ Inactive", center=True)
+                status_item = _cell("✗ Không dùng", center=True)
                 status_item.setForeground(QColor("#c0392b"))
-            self._q_table.setItem(r, 7, status_item)
+            status_item.setToolTip(status_item.text())
+            self._q_table.setItem(r, 8, status_item)
             # Store question id in column 0 (displayed as STT)
             self._q_table.item(r, 0).setData(
                 Qt.ItemDataRole.UserRole, q.id
             )
-        self._q_table.resizeRowsToContents()
         bank_label = ""
         if self._current_bank_id:
             item = self._bank_list.currentItem()
             if item:
-                bank_label = f"「{item.text()}」 – "
+                bank_label = f"「{item.data(Qt.ItemDataRole.UserRole + 1) or item.text()}」 – "
         self._status_lbl.setText(
             f"{bank_label}{len(questions)} câu hỏi"
             + (" (đang lọc)" if self._search_edit.text()
@@ -319,6 +359,8 @@ class QuestionBankView(QWidget):
                     subject=data["subject"],
                     course_code=data["course_code"],
                     exam_title=data["exam_title"],
+                    assessment_type=data["assessment_type"],
+                    course_learning_outcomes=data["course_learning_outcomes"],
                 )
             )
             self._load_banks()
@@ -349,6 +391,8 @@ class QuestionBankView(QWidget):
                 "subject": bank.subject,
                 "course_code": bank.course_code,
                 "exam_title": bank.exam_title,
+                "assessment_type": bank.assessment_type,
+                "course_learning_outcomes": bank.course_learning_outcomes,
             }
         except Exception as exc:
             show_critical_error(self, "Lỗi", "Không thể tải thông tin ngân hàng.", exc=exc)
@@ -369,6 +413,8 @@ class QuestionBankView(QWidget):
                     subject=data["subject"],
                     course_code=data["course_code"],
                     exam_title=data["exam_title"],
+                    assessment_type=data["assessment_type"],
+                    course_learning_outcomes=data["course_learning_outcomes"],
                 ),
             )
             self._load_banks()
@@ -381,7 +427,7 @@ class QuestionBankView(QWidget):
             QMessageBox.information(self, "Thông báo", "Chưa chọn ngân hàng.")
             return
         bid = item.data(Qt.ItemDataRole.UserRole)
-        name = item.text()
+        name = item.data(Qt.ItemDataRole.UserRole + 1) or item.text()
         ans = QMessageBox.question(
             self,
             "Xác nhận xóa ngân hàng",
@@ -475,6 +521,38 @@ class QuestionBankView(QWidget):
         """Reload bank data and notify quiz builder to sync."""
         self.refresh()
         self.refresh_requested.emit()
+
+    def _format_bank_context(self, row: dict) -> str:
+        assessment = str(row.get("assessment_type", "") or "").strip() or "Chưa chọn loại"
+        clos = row.get("course_learning_outcomes", []) or []
+        clo_codes = [str(item.get("code", "")).strip() for item in clos if str(item.get("code", "")).strip()]
+        clo_text = ", ".join(clo_codes[:3]) if clo_codes else "Chưa gắn CLO"
+        if len(clo_codes) > 3:
+            clo_text = f"{clo_text}, +{len(clo_codes) - 3}"
+        question_count = int(row.get("question_count", 0) or 0)
+        return f"{assessment} | {clo_text} | {question_count} câu hỏi"
+
+    def _format_bank_tooltip(self, row: dict) -> str:
+        clos = row.get("course_learning_outcomes", []) or []
+        clo_lines = [
+            f"{str(item.get('code', '')).strip()}: {str(item.get('description', '')).strip()}"
+            for item in clos
+            if str(item.get("code", "")).strip()
+        ]
+        if not clo_lines:
+            clo_lines = ["Chưa khai báo CLO"]
+        return (
+            f"Ngân hàng: {row.get('name', '')}\n"
+            f"Loại đánh giá: {row.get('assessment_type', '') or 'Chưa chọn'}\n"
+            f"Số câu hỏi: {int(row.get('question_count', 0) or 0)}\n"
+            f"CLO:\n- " + "\n- ".join(clo_lines)
+        )
+
+    def _display_level(self, difficulty: str | None) -> str:
+        raw = str(difficulty or "").strip()
+        if not raw:
+            return ""
+        return _LEGACY_DIFFICULTY_TO_LEVEL.get(raw, raw)
 
 # ---------------------------------------------------------------------------
 # Helper

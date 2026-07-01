@@ -3,8 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QComboBox, QWidget
 
-from core.database.session import get_session
-from core.domain.services.question_service import QuestionService
+from ui.facades.question_bank_facade import QuestionBankFacade
 
 
 class BankCombo(QComboBox):
@@ -12,27 +11,14 @@ class BankCombo(QComboBox):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._question_service = QuestionService()
+        self._facade = QuestionBankFacade()
 
     def reload(self) -> None:
         self.blockSignals(True)
         prev_id = self.currentData(Qt.ItemDataRole.UserRole) if self.currentIndex() >= 0 else None
         self.clear()
         try:
-            with get_session() as session:
-                banks = self._question_service.list_banks(session)
-                items = [
-                    {
-                        "id": b.id,
-                        "name": b.name,
-                        "school": b.school or "",
-                        "department": b.department or "",
-                        "subject": b.subject or "",
-                        "course_code": b.course_code or "",
-                        "exam_title": b.exam_title or "",
-                    }
-                    for b in banks
-                ]
+            items = self._facade.list_bank_items()
         except Exception:
             items = []
 

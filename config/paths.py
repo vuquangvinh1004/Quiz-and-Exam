@@ -24,11 +24,19 @@ IMPORTS_DIR: Path = DATA_DIR / "imports"
 EXPORTS_DIR: Path = DATA_DIR / "exports"
 BACKUPS_DIR: Path = DATA_DIR / "backups"
 LOGS_DIR: Path = DATA_DIR / "logs"
+TEMPLATES_DIR: Path = DATA_DIR / "templates"
 
 DB_PATH: Path = DATABASE_DIR / "quiz_app.db"
 
 
 def ensure_data_dirs() -> None:
     """Create all required data directories if they do not exist."""
-    for directory in (DATABASE_DIR, IMPORTS_DIR, EXPORTS_DIR, BACKUPS_DIR, LOGS_DIR):
+    for directory in (
+        DATABASE_DIR,
+        IMPORTS_DIR,
+        EXPORTS_DIR,
+        BACKUPS_DIR,
+        LOGS_DIR,
+        TEMPLATES_DIR,
+    ):
         directory.mkdir(parents=True, exist_ok=True)

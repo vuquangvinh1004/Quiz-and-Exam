@@ -6,7 +6,7 @@ a clean .docx exam document ready for printing.
 
 No database access occurs here. All data must be supplied by the caller.
 
-Supported question types: MC, MA, BLANK, SA
+Supported question types: MC, MA, TF, BLANK, SA, ES
 
 Generated sections (each controlled by ExportConfig):
     1. Exam header (school, department, subject, title, etc.)
@@ -56,15 +56,35 @@ class ExportConfig:
     show_answer_sheet: bool = True
     show_answer_key: bool = True
     show_scoring_rules: bool = True
+    show_question_points: bool = False
+    show_question_statistics: bool = False
     # "global" = continuous numbering across all questions
     # "per_section" = restart numbering in each section
     numbering_mode: str = "global"
     # "grouped" = separate Part A/B/C/D by question type
     # "flat"    = all questions in one list
     group_by_type: bool = True
+    show_cover_sheet: bool = False
+    split_answer_key_file: bool = False
+    watermark_text: str = ""
+    watermark_preset: str = "custom"
+    cover_sheet_template: str = "standard"
+    answer_key_naming_policy: str = "suffix"
     # essay questions appended as last section
     # each dict: {"number": int, "score": float}
     essay_questions: list[dict] = field(default_factory=list)
+
+
+@dataclass
+class PrintProfile:
+    """Controls page layout and printable header blocks."""
+
+    page_size: str = "A4"
+    top_margin_cm: float = 1.5
+    bottom_margin_cm: float = 1.5
+    left_margin_cm: float = 2.0
+    right_margin_cm: float = 1.5
+    show_student_info_block: bool = True
 
 
 @dataclass
@@ -78,6 +98,9 @@ class ExportQuestionSnapshot:
     explanation: str = ""
     options: list = field(default_factory=list)
     accepted_answers: Optional[list] = None
+    difficulty: str = ""
+    learning_outcome_code: str = ""
+    category: str = ""
 
     @classmethod
     def from_dict(cls, data: dict) -> "ExportQuestionSnapshot":
@@ -89,6 +112,9 @@ class ExportQuestionSnapshot:
             explanation=data.get("explanation") or "",
             options=data.get("options") or [],
             accepted_answers=data.get("accepted_answers"),
+            difficulty=data.get("difficulty") or "",
+            learning_outcome_code=data.get("learning_outcome_code") or "",
+            category=data.get("category") or "",
         )
 
     def to_dict(self) -> dict:
@@ -100,6 +126,9 @@ class ExportQuestionSnapshot:
             "explanation": self.explanation,
             "options": self.options,
             "accepted_answers": self.accepted_answers,
+            "difficulty": self.difficulty,
+            "learning_outcome_code": self.learning_outcome_code,
+            "category": self.category,
         }
 
 
@@ -107,8 +136,31 @@ class ExportQuestionSnapshot:
 _TYPE_LABELS: dict[str, str] = {
     "MC": "Multiple Choice",
     "MA": "Multiple Answer",
-    "BLANK": "Điền khuyết",
+    "TF": "Đúng/Sai",
+    "BLANK": "Điền vào chỗ trống",
     "SA": "Trả lời ngắn",
+    "ES": "Tự luận",
+}
+
+_TYPE_STATS_LABELS: dict[str, str] = {
+    "MC": "Trắc nghiệm 1 đáp án",
+    "MA": "Trắc nghiệm nhiều đáp án",
+    "TF": "Đúng/Sai",
+    "BLANK": "Điền vào chỗ trống",
+    "SA": "Trả lời ngắn",
+    "ES": "Tự luận",
+}
+
+_DIFFICULTY_LABELS: dict[str, str] = {
+    "easy": "Nhớ",
+    "medium": "Hiểu",
+    "hard": "Vận dụng",
+    "Nhớ": "Nhớ",
+    "Hiểu": "Hiểu",
+    "Vận dụng": "Vận dụng",
+    "Phân tích": "Phân tích",
+    "Đánh giá": "Đánh giá",
+    "Sáng tạo": "Sáng tạo",
 }
 
 _SECTION_LETTERS = "ABCDEFGH"
@@ -123,13 +175,21 @@ _INSTRUCTIONS: dict[str, str] = {
         "Câu hỏi trắc nghiệm nhiều đáp án (Multiple Answer): "
         "Chọn TẤT CẢ các đáp án đúng bằng cách khoanh tròn hoặc đánh dấu vào chữ cái tương ứng."
     ),
+    "TF": (
+        "Câu hỏi Đúng/Sai (True/False): "
+        "Chọn một đáp án đúng trong hai lựa chọn Đúng hoặc Sai."
+    ),
     "BLANK": (
-        "Câu điền khuyết (Blank): "
+        "Câu điền vào chỗ trống (Blank): "
         "Điền từ hoặc cụm từ thích hợp vào chỗ trống trong câu."
     ),
     "SA": (
         "Câu trả lời ngắn (Short Answer): "
         "Trả lời ngắn gọn, rõ ràng vào phần dành sẵn bên dưới mỗi câu."
+    ),
+    "ES": (
+        "Câu tự luận (Essay): "
+        "Trình bày câu trả lời theo hướng dẫn hoặc dàn ý được yêu cầu."
     ),
 }
 
@@ -178,9 +238,16 @@ class WordRenderer:
 
         doc = Document()
         self._set_default_font(doc, "Times New Roman")
-        self._set_page_margins(doc)
+        self._apply_print_profile(doc, self._build_print_profile(config))
 
-        self._render_header(doc, meta)
+        print_profile = self._build_print_profile(config)
+        self._apply_watermark(doc, config.watermark_text)
+
+        if config.show_cover_sheet:
+            self._render_cover_sheet(doc, meta)
+            doc.add_page_break()
+
+        self._render_header(doc, meta, print_profile)
 
         if config.show_instructions:
             self._render_instructions(doc, normalized_questions)
@@ -195,9 +262,14 @@ class WordRenderer:
                 if essay_letter_idx < len(_SECTION_LETTERS)
                 else ""
             )
-            self._render_essay_section(doc, config.essay_questions, essay_letter)
+            self._render_essay_section(doc, config.essay_questions, essay_letter, config)
 
-        if config.show_answer_sheet or config.show_scoring_rules or config.show_answer_key:
+        if (
+            config.show_answer_sheet
+            or config.show_scoring_rules
+            or config.show_answer_key
+            or config.show_question_statistics
+        ):
             # Close the question section — SECTIONPAGES in the header will reflect
             # only question pages, not the supplementary pages that follow.
             self._add_next_page_section_break(doc)
@@ -217,11 +289,38 @@ class WordRenderer:
                 first_supp = False
                 self._render_scoring_rules(doc, normalized_questions, config)
 
+            if config.show_question_statistics:
+                if not first_supp:
+                    doc.add_page_break()
+                first_supp = False
+                self._render_question_statistics(doc, normalized_questions, config)
+
             if config.show_answer_key:
                 if not first_supp:
                     doc.add_page_break()
                 self._render_answer_key(doc, grouped, config)
 
+        return doc
+
+    def render_answer_key_document(
+        self,
+        questions: list[ExportQuestionSnapshot | dict],
+        meta: ExamMeta,
+        config: ExportConfig,
+    ) -> Document:
+        """Render a standalone answer-key document for teacher use."""
+        normalized_questions = self._normalize_questions(questions)
+        grouped = self._group_questions(normalized_questions, config)
+
+        doc = Document()
+        self._set_default_font(doc, "Times New Roman")
+        self._apply_print_profile(doc, self._build_print_profile(config))
+        self._apply_watermark(doc, config.watermark_text)
+
+        key_meta = ExamMeta(**vars(meta))
+        key_meta.exam_title = f"{meta.exam_title} - ĐÁP ÁN"
+        self._render_header(doc, key_meta, self._build_print_profile(config))
+        self._render_answer_key(doc, grouped, config)
         return doc
 
     @staticmethod
@@ -241,12 +340,51 @@ class WordRenderer:
     # Page setup
     # ------------------------------------------------------------------
 
-    def _set_page_margins(self, doc: Document) -> None:
+    def _build_print_profile(self, config: ExportConfig) -> PrintProfile:
+        profile = getattr(config, "print_profile", None)
+        if isinstance(profile, PrintProfile):
+            return profile
+        return PrintProfile(
+            page_size=getattr(config, "page_size", "A4"),
+            top_margin_cm=float(getattr(config, "top_margin_cm", 1.5)),
+            bottom_margin_cm=float(getattr(config, "bottom_margin_cm", 1.5)),
+            left_margin_cm=float(getattr(config, "left_margin_cm", 2.0)),
+            right_margin_cm=float(getattr(config, "right_margin_cm", 1.5)),
+            show_student_info_block=bool(getattr(config, "show_student_info_block", True)),
+        )
+
+    def _apply_print_profile(self, doc: Document, profile: PrintProfile) -> None:
         section = doc.sections[0]
-        section.top_margin = Cm(1.5)
-        section.bottom_margin = Cm(1.5)
-        section.left_margin = Cm(2.0)
-        section.right_margin = Cm(1.5)
+        self._set_page_size(section, profile.page_size)
+        section.top_margin = Cm(profile.top_margin_cm)
+        section.bottom_margin = Cm(profile.bottom_margin_cm)
+        section.left_margin = Cm(profile.left_margin_cm)
+        section.right_margin = Cm(profile.right_margin_cm)
+
+    def _set_page_size(self, section, page_size: str) -> None:
+        size = page_size.upper().strip()
+        if size == "LETTER":
+            section.page_width = Inches(8.5)
+            section.page_height = Inches(11.0)
+            return
+        section.page_width = Cm(21.0)
+        section.page_height = Cm(29.7)
+
+    def _apply_watermark(self, doc: Document, watermark_text: str) -> None:
+        text = self._resolve_watermark_text(watermark_text)
+        if not text:
+            return
+        header = doc.sections[0].header
+        p = header.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p.add_run(text)
+        run.font.size = Pt(26)
+        run.font.italic = True
+        run.font.color.rgb = RGBColor(0xC8, 0xC8, 0xC8)
+
+    def _resolve_watermark_text(self, watermark_text: str) -> str:
+        return watermark_text.strip()
+
     def _set_default_font(self, doc: Document, font_name: str) -> None:
         """Apply *font_name* as the document-wide default for all runs.
 
@@ -292,7 +430,7 @@ class WordRenderer:
     # Header
     # ------------------------------------------------------------------
 
-    def _render_header(self, doc: Document, meta: ExamMeta) -> None:
+    def _render_header(self, doc: Document, meta: ExamMeta, print_profile: PrintProfile) -> None:
         """Header matching the Vietnamese standard exam template.
 
         Layout::
@@ -367,16 +505,93 @@ class WordRenderer:
 
         doc.add_paragraph("")  # gap
 
-        # ── Student info table (bordered) ────────────────────────────────
+        if print_profile.show_student_info_block:
+            self._render_student_info_block(doc)
+
+        # ── Note paragraph ───────────────────────────────────────────────
+        doc.add_paragraph("")
+        if meta.note:
+            p = doc.add_paragraph()
+            r1 = p.add_run("Lưu ý: ")
+            r1.bold = True
+            r1.font.size = Pt(12)
+            r2 = p.add_run(meta.note)
+            r2.font.size = Pt(12)
+        doc.add_paragraph("")  # spacer before section body
+
+    def _render_cover_sheet(self, doc: Document, meta: ExamMeta) -> None:
+        """Render a simple teacher-facing cover sheet before the exam body."""
+        template = getattr(meta, "cover_sheet_template", "standard")
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p.add_run((meta.school or "").upper())
+        run.bold = True
+        run.font.size = Pt(16)
+
+        if meta.department and template == "standard":
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = p.add_run(meta.department)
+            run.bold = True
+            run.font.size = Pt(14)
+
+        doc.add_paragraph("")
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p.add_run(meta.exam_title.upper())
+        run.bold = True
+        run.font.size = Pt(20)
+
+        if meta.subject:
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = p.add_run(meta.subject)
+            run.font.size = Pt(16)
+
+        if meta.course_code:
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = p.add_run(f"Mã học phần: {meta.course_code}")
+            run.font.size = Pt(13)
+
+        if meta.instructor and template == "standard":
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = p.add_run(f"Cán bộ giảng dạy: {meta.instructor}")
+            run.font.size = Pt(13)
+
+        duration = meta.duration_minutes if meta.duration_minutes else "__"
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p.add_run(f"Thời lượng: {duration} phút")
+        run.font.size = Pt(13)
+
+        if meta.note:
+            doc.add_paragraph("")
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = p.add_run(meta.note)
+            run.italic = True
+            run.font.size = Pt(12)
+
+        if template == "minimal":
+            doc.add_paragraph("")
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = p.add_run("Tài liệu dùng cho in ấn/phát hành nội bộ.")
+            run.italic = True
+            run.font.size = Pt(11)
+
+    def _render_student_info_block(self, doc: Document) -> None:
+        """Render the bordered student information block below exam metadata."""
         STU_LEFT_CM = 12.5
-        STU_RIGHT_CM = 9.5
+        STU_RIGHT_CM = 8.55
         stu_tbl = doc.add_table(rows=3, cols=2)
         stu_tbl.style = "Table Grid"
         for row in stu_tbl.rows:
             self._set_cell_width(row.cells[0], STU_LEFT_CM)
             self._set_cell_width(row.cells[1], STU_RIGHT_CM)
 
-        # Row 0: column headers
         p = stu_tbl.cell(0, 0).paragraphs[0]
         r = p.add_run("Thông tin của sinh viên")
         r.bold = True
@@ -389,38 +604,21 @@ class WordRenderer:
         r.font.size = Pt(12)
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        # Row 1: full name
         p = stu_tbl.cell(1, 0).paragraphs[0]
         p.add_run("Họ & tên:  " + "_" * 44)
         p.runs[0].font.size = Pt(12)
         p.paragraph_format.space_before = Pt(6)
         p.paragraph_format.space_after = Pt(6)
 
-        # Row 2: student-ID / class / order
         p = stu_tbl.cell(2, 0).paragraphs[0]
         p.add_run("MSSV:  " + "_" * 16 + "   Lớp:  " + "_" * 10 + "   STT:  " + "_" * 3)
         p.runs[0].font.size = Pt(12)
         p.paragraph_format.space_before = Pt(6)
         p.paragraph_format.space_after = Pt(6)
 
-        # Merge right column rows 1+2 → signature area
         stu_tbl.cell(1, 1).merge(stu_tbl.cell(2, 1))
-
-        # Hide the internal horizontal border between "Họ & tên" and "MSSV…" rows
-        # (only in the left column — right column is already merged)
         self._hide_cell_border(stu_tbl.cell(1, 0), "bottom")
         self._hide_cell_border(stu_tbl.cell(2, 0), "top")
-
-        # ── Note paragraph ───────────────────────────────────────────────
-        doc.add_paragraph("")
-        if meta.note:
-            p = doc.add_paragraph()
-            r1 = p.add_run("Lưu ý: ")
-            r1.bold = True
-            r1.font.size = Pt(12)
-            r2 = p.add_run(meta.note)
-            r2.font.size = Pt(12)
-        doc.add_paragraph("")  # spacer before section body
 
     # ------------------------------------------------------------------
     # Header helpers
@@ -591,7 +789,7 @@ class WordRenderer:
         p.runs[0].font.size = Pt(12)
         p.runs[0].underline = True
 
-        for qtype in ["MC", "MA", "BLANK", "SA"]:
+        for qtype in ["MC", "MA", "TF", "BLANK", "SA", "ES"]:
             if qtype in types_present and qtype in _INSTRUCTIONS:
                 p = doc.add_paragraph(style="List Bullet")
                 p.add_run(_INSTRUCTIONS[qtype])
@@ -616,7 +814,7 @@ class WordRenderer:
             return [("", "", list(questions))]
 
         # Group by type in canonical order
-        order = ["MC", "MA", "BLANK", "SA"]
+        order = ["MC", "MA", "TF", "BLANK", "SA", "ES"]
         buckets: dict[str, list[dict]] = {t: [] for t in order}
         for q in questions:
             qtype = q.get("type", "MC")
@@ -658,7 +856,7 @@ class WordRenderer:
                     if config.numbering_mode == "global"
                     else section_counter
                 )
-                self._render_single_question(doc, q, num)
+                self._render_single_question(doc, q, num, config)
 
             doc.add_paragraph("")
 
@@ -667,6 +865,7 @@ class WordRenderer:
         doc: Document,
         q: dict,
         number: int,
+        config: ExportConfig,
     ) -> None:
         qtype = q.get("type", "MC")
         content = q.get("content", "")
@@ -679,15 +878,16 @@ class WordRenderer:
         run.font.size = Pt(12)
         p.add_run(f" {content}")
         p.runs[-1].font.size = Pt(12)
-        p.add_run(f"  [{points:g} điểm]")
-        p.runs[-1].font.size = Pt(12)
-        p.runs[-1].font.color.rgb = RGBColor(0x80, 0x80, 0x80)
+        if config.show_question_points:
+            p.add_run(f"  [{points:g} điểm]")
+            p.runs[-1].font.size = Pt(12)
+            p.runs[-1].font.color.rgb = RGBColor(0x80, 0x80, 0x80)
 
-        if qtype in ("MC", "MA"):
+        if qtype in ("MC", "MA", "TF"):
             self._render_mc_ma_options(doc, q)
         elif qtype == "BLANK":
             self._render_blank_answer_space(doc)
-        elif qtype == "SA":
+        elif qtype in ("SA", "ES"):
             self._render_sa_answer_space(doc)
 
     def _render_mc_ma_options(self, doc: Document, q: dict) -> None:
@@ -719,6 +919,7 @@ class WordRenderer:
         doc: Document,
         essay_questions: list[dict],
         section_letter: str,
+        config: ExportConfig,
     ) -> None:
         """Render Tự luận section as the last part of the question body."""
         title = f"Phần {section_letter}. Tự luận" if section_letter else "Tự luận"
@@ -735,9 +936,10 @@ class WordRenderer:
             run = p.add_run(f"Câu {num}.")
             run.bold = True
             run.font.size = Pt(12)
-            p.add_run(f"  [{score:g} điểm]")
-            p.runs[-1].font.size = Pt(12)
-            p.runs[-1].font.color.rgb = RGBColor(0x80, 0x80, 0x80)
+            if config.show_question_points:
+                p.add_run(f"  [{score:g} điểm]")
+                p.runs[-1].font.size = Pt(12)
+                p.runs[-1].font.color.rgb = RGBColor(0x80, 0x80, 0x80)
             # Blank answer lines
             for _ in range(6):
                 p2 = doc.add_paragraph("_" * 80)
@@ -777,7 +979,7 @@ class WordRenderer:
                 )
                 qtype = q.get("type", "MC")
 
-                if qtype == "MC":
+                if qtype in ("MC", "TF"):
                     options = q.get("options", [])
                     keys = [o.get("key", "") for o in options]
                     choices = "  ".join(f"○ {k}" for k in keys)
@@ -795,7 +997,7 @@ class WordRenderer:
                     )
                     p.runs[0].font.size = Pt(12)
 
-                elif qtype in ("BLANK", "SA"):
+                elif qtype in ("BLANK", "SA", "ES"):
                     p = doc.add_paragraph(
                         f"Câu {section_num}:  " + "_" * 50
                     )
@@ -813,9 +1015,10 @@ class WordRenderer:
                 run = p.add_run(f"Câu {num}.")
                 run.bold = True
                 run.font.size = Pt(11)
-                p.add_run(f"  [{score:g} điểm]")
-                p.runs[-1].font.size = Pt(11)
-                p.runs[-1].font.color.rgb = RGBColor(0x80, 0x80, 0x80)
+                if config.show_question_points:
+                    p.add_run(f"  [{score:g} điểm]")
+                    p.runs[-1].font.size = Pt(11)
+                    p.runs[-1].font.color.rgb = RGBColor(0x80, 0x80, 0x80)
                 for _ in range(6):
                     p2 = doc.add_paragraph("_" * 80)
                     p2.runs[0].font.size = Pt(12)
@@ -843,15 +1046,17 @@ class WordRenderer:
         rules: dict[str, str] = {
             "MC": "Mỗi câu Nhiều lựa chọn: chọn đúng 1 đáp án duy nhất mới được điểm; chọn sai hoặc bỏ trống: 0 điểm.",
             "MA": "Mỗi câu Nhiều đáp án: phải chọn đúng và đủ tất cả đáp án đúng mới được toàn bộ điểm; chọn thiếu hoặc thừa: 0 điểm.",
-            "BLANK": "Mỗi câu Điền khuyết: điền đúng (không phân biệt hoa/thường, bỏ qua khoảng trắng đầu/cuối) mới được điểm.",
+            "TF": "Mỗi câu Đúng/Sai: chọn đúng phương án duy nhất mới được điểm.",
+            "BLANK": "Mỗi câu Điền vào chỗ trống: điền đúng (không phân biệt hoa/thường, bỏ qua khoảng trắng đầu/cuối) mới được điểm.",
             "SA": "Mỗi câu Trả lời ngắn: so khớp với đáp án mẫu (không phân biệt hoa/thường) mới được điểm.",
+            "ES": "Mỗi câu Tự luận: chấm theo thang điểm/rubric của giáo viên.",
         }
 
         total = sum(q.get("point_value", 1.0) for q in questions)
         if config and config.essay_questions:
             total += sum(eq.get("score", 1.0) for eq in config.essay_questions)
 
-        for qtype in ["MC", "MA", "BLANK", "SA"]:
+        for qtype in ["MC", "MA", "TF", "BLANK", "SA", "ES"]:
             if qtype in types_present:
                 p = doc.add_paragraph(style="List Bullet")
                 p.add_run(rules[qtype])
@@ -902,7 +1107,7 @@ class WordRenderer:
                 points = q.get("point_value", 1.0)
                 total += points
 
-                if qtype in ("MC", "MA"):
+                if qtype in ("MC", "MA", "TF"):
                     correct_keys = [
                         o.get("key", "")
                         for o in q.get("options", [])
@@ -939,6 +1144,136 @@ class WordRenderer:
         p.runs[0].bold = True
         p.runs[0].font.size = Pt(12)
         p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
+    def _render_question_statistics(
+        self,
+        doc: Document,
+        questions: list[dict],
+        config: ExportConfig,
+    ) -> None:
+        stats_questions = self._questions_for_statistics(questions, config)
+        total_points = sum(float(q.get("point_value", 1.0) or 0.0) for q in stats_questions)
+        sections = [
+            ("Thống kê theo Chương", "Chương", self._build_statistics_rows(stats_questions, self._chapter_label)),
+            ("Thống kê theo CLO", "CLO", self._build_statistics_rows(stats_questions, self._clo_label)),
+            ("Thống kê theo Mức độ", "Mức độ", self._build_statistics_rows(stats_questions, self._difficulty_label)),
+            ("Thống kê theo Loại câu hỏi", "Loại", self._build_statistics_rows(stats_questions, self._type_label)),
+        ]
+
+        for index, (title, group_header, rows) in enumerate(sections):
+            p = doc.add_paragraph(title)
+            p.runs[0].bold = True
+            p.runs[0].font.size = Pt(13)
+            self._render_statistics_table(doc, group_header, rows, total_points)
+            if index < len(sections) - 1:
+                doc.add_paragraph("")
+
+    def _render_statistics_table(
+        self,
+        doc: Document,
+        group_header: str,
+        rows: list[tuple[str, int, float]],
+        total_points: float,
+    ) -> None:
+        table = doc.add_table(rows=len(rows) + 2, cols=4)
+        table.style = "Table Grid"
+
+        widths = (6.0, 3.0, 3.0, 4.0)
+        for row in table.rows:
+            for cell, width in zip(row.cells, widths, strict=False):
+                self._set_cell_width(cell, width)
+
+        headers = (group_header, "Số câu", "Điểm", "Tỷ lệ điểm")
+        for col, text in enumerate(headers):
+            p = table.cell(0, col).paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = p.add_run(text)
+            run.bold = True
+            run.font.size = Pt(12)
+
+        total_count = 0
+        total_score = 0.0
+        for row_index, (label, count, score) in enumerate(rows, start=1):
+            total_count += count
+            total_score += score
+            values = (
+                label,
+                str(count),
+                f"{score:g}",
+                self._ratio_text(score, total_points),
+            )
+            for col, text in enumerate(values):
+                p = table.cell(row_index, col).paragraphs[0]
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = p.add_run(text)
+                run.font.size = Pt(12)
+
+        total_row = len(rows) + 1
+        summary = (
+            "Tổng",
+            str(total_count),
+            f"{total_score:g}",
+            self._ratio_text(total_score, total_points),
+        )
+        for col, text in enumerate(summary):
+            p = table.cell(total_row, col).paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = p.add_run(text)
+            run.bold = True
+            run.font.size = Pt(12)
+
+    def _build_statistics_rows(
+        self,
+        questions: list[dict],
+        label_getter,
+    ) -> list[tuple[str, int, float]]:
+        stats: dict[str, tuple[int, float]] = {}
+        for question in questions:
+            label = label_getter(question)
+            count, score = stats.get(label, (0, 0.0))
+            stats[label] = (count + 1, score + float(question.get("point_value", 1.0) or 0.0))
+        return [(label, count, score) for label, (count, score) in stats.items()]
+
+    def _questions_for_statistics(self, questions: list[dict], config: ExportConfig) -> list[dict]:
+        stats_questions = [dict(question) for question in questions]
+        for essay in config.essay_questions:
+            stats_questions.append(
+                {
+                    "type": "ES",
+                    "content": "",
+                    "point_value": essay.get("score", 1.0),
+                    "difficulty": "",
+                    "learning_outcome_code": "",
+                    "category": "",
+                }
+            )
+        return stats_questions
+
+    @staticmethod
+    def _ratio_text(score: float, total_points: float) -> str:
+        if total_points <= 0:
+            return "0.0%"
+        return f"{(score / total_points) * 100:.1f}%"
+
+    @staticmethod
+    def _chapter_label(question: dict) -> str:
+        value = str(question.get("category") or "").strip()
+        return value or "(Chưa gắn chương)"
+
+    @staticmethod
+    def _clo_label(question: dict) -> str:
+        value = str(question.get("learning_outcome_code") or "").strip()
+        return value or "(Chưa gắn CLO)"
+
+    @staticmethod
+    def _difficulty_label(question: dict) -> str:
+        value = str(question.get("difficulty") or "").strip()
+        return _DIFFICULTY_LABELS.get(value, value or "(Chưa gắn mức độ)")
+
+    @staticmethod
+    def _type_label(question: dict) -> str:
+        value = str(question.get("type") or "").strip()
+        return _TYPE_STATS_LABELS.get(value, value or "(Chưa gắn loại)")
 
     # ------------------------------------------------------------------
     # Helpers

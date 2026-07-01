@@ -15,6 +15,7 @@ def _q(
     qid: int,
     *,
     chapter: str,
+    clo: str,
     qtype: str,
     difficulty: str,
 ) -> Question:
@@ -24,6 +25,7 @@ def _q(
         question_type=qtype,
         content=f"Q{qid}",
         category=chapter,
+        learning_outcome_code=clo,
         difficulty=difficulty,
         is_active=True,
     )
@@ -31,12 +33,12 @@ def _q(
 
 def _sample_questions() -> list[Question]:
     return [
-        _q(1, chapter="Chương 1", qtype="MC", difficulty="easy"),
-        _q(2, chapter="Chương 1", qtype="MA", difficulty="medium"),
-        _q(3, chapter="Chương 2", qtype="BLANK", difficulty="easy"),
-        _q(4, chapter="Chương 2", qtype="SA", difficulty="medium"),
-        _q(5, chapter="Chương 3", qtype="MC", difficulty="hard"),
-        _q(6, chapter="Chương 3", qtype="MA", difficulty="hard"),
+        _q(1, chapter="Chương 1", clo="CLO_A", qtype="MC", difficulty="easy"),
+        _q(2, chapter="Chương 1", clo="CLO_A", qtype="MA", difficulty="medium"),
+        _q(3, chapter="Chương 2", clo="CLO_B", qtype="BLANK", difficulty="easy"),
+        _q(4, chapter="Chương 2", clo="CLO_B", qtype="SA", difficulty="hard"),
+        _q(5, chapter="Chương 3", clo="CLO_C", qtype="MC", difficulty="Phân tích"),
+        _q(6, chapter="Chương 3", clo="CLO_C", qtype="MA", difficulty="Sáng tạo"),
     ]
 
 
@@ -45,15 +47,23 @@ def test_chapter_key_returns_fallback_for_empty() -> None:
     assert chapter_key("") == "(Chưa gán chương)"
 
 
-def test_validate_quota_plan_allows_partial_quota() -> None:
-    questions = _sample_questions()
-    inv = build_inventory(questions)
+def test_build_inventory_groups_by_clo_and_level() -> None:
+    inv = build_inventory(_sample_questions())
+    assert inv.by_clo[("CLO_A", "Nhớ")] == 1
+    assert inv.by_clo[("CLO_A", "Hiểu")] == 1
+    assert inv.by_clo[("CLO_B", "Nhớ")] == 1
+    assert inv.by_clo[("CLO_B", "Vận dụng")] == 1
+    assert inv.by_clo[("CLO_C", "Phân tích")] == 1
+    assert inv.by_clo[("CLO_C", "Sáng tạo")] == 1
 
+
+def test_validate_quota_plan_allows_partial_quota() -> None:
+    inv = build_inventory(_sample_questions())
     plan = QuotaPlan(
         total_questions=4,
         chapter_quota={"Chương 1": 1},
         type_quota={},
-        difficulty_quota={},
+        clo_quota={},
     )
 
     result = validate_quota_plan(plan, inv)
@@ -61,14 +71,12 @@ def test_validate_quota_plan_allows_partial_quota() -> None:
 
 
 def test_validate_quota_plan_detects_axis_sum_exceeds_total() -> None:
-    questions = _sample_questions()
-    inv = build_inventory(questions)
-
+    inv = build_inventory(_sample_questions())
     plan = QuotaPlan(
         total_questions=2,
         chapter_quota={"Chương 1": 2, "Chương 2": 1},
         type_quota={},
-        difficulty_quota={},
+        clo_quota={("CLO_A", "Nhớ"): 1},
     )
 
     result = validate_quota_plan(plan, inv)
@@ -76,34 +84,37 @@ def test_validate_quota_plan_detects_axis_sum_exceeds_total() -> None:
     assert any("không được lớn hơn" in msg for msg in result.errors)
 
 
-def test_validate_quota_plan_detects_overflow() -> None:
-    questions = _sample_questions()
-    inv = build_inventory(questions)
-
+def test_validate_quota_plan_detects_clo_overflow() -> None:
+    inv = build_inventory(_sample_questions())
     plan = QuotaPlan(
         total_questions=4,
-        chapter_quota={"Chương 1": 3, "Chương 2": 1},
+        chapter_quota={"Chương 1": 1, "Chương 2": 1},
         type_quota={"MC": 2, "MA": 1, "BLANK": 1},
-        difficulty_quota={"easy": 2, "medium": 1, "hard": 1},
+        clo_quota={
+            ("CLO_A", "Nhớ"): 1,
+            ("CLO_A", "Hiểu"): 2,
+        },
     )
 
     result = validate_quota_plan(plan, inv)
     assert not result.is_valid
-    assert "Chương 1" in result.chapter_overflow
+    assert ("CLO_A", "Hiểu") in result.clo_overflow
 
 
 def test_allocate_questions_for_plan_success() -> None:
     questions = _sample_questions()
     plan = QuotaPlan(
-        total_questions=4,
-        chapter_quota={"Chương 1": 2, "Chương 2": 1, "Chương 3": 1},
-        type_quota={"MC": 1, "MA": 2, "BLANK": 1},
-        difficulty_quota={"easy": 2, "medium": 1, "hard": 1},
+        total_questions=2,
+        chapter_quota={"Chương 1": 1, "Chương 2": 1},
+        type_quota={"MC": 1, "SA": 1},
+        clo_quota={("CLO_A", "Nhớ"): 1, ("CLO_B", "Vận dụng"): 1},
     )
 
     picked = allocate_questions_for_plan(questions, plan, max_attempts=500)
     assert picked is not None
-    assert len(picked) == 4
+    assert len(picked) == 2
+    picked_ids = {q.id for q in picked}
+    assert picked_ids == {1, 4}
 
 
 def test_allocate_respects_excluded_ids() -> None:
@@ -111,14 +122,14 @@ def test_allocate_respects_excluded_ids() -> None:
     plan = QuotaPlan(
         total_questions=2,
         chapter_quota={"Chương 1": 1, "Chương 2": 1},
-        type_quota={"MA": 1, "BLANK": 1},
-        difficulty_quota={"easy": 1, "medium": 1},
+        type_quota={"MC": 1, "SA": 1},
+        clo_quota={("CLO_A", "Nhớ"): 1, ("CLO_B", "Vận dụng"): 1},
     )
 
     picked = allocate_questions_for_plan(
         questions,
         plan,
-        excluded_question_ids={2},
+        excluded_question_ids={1, 4},
         max_attempts=300,
     )
     assert picked is None
@@ -128,9 +139,9 @@ def test_allocate_no_repeat_two_batches() -> None:
     questions = _sample_questions()
     plan = QuotaPlan(
         total_questions=2,
-        chapter_quota={"Chương 3": 2},
-        type_quota={"MC": 1, "MA": 1},
-        difficulty_quota={"hard": 2},
+        chapter_quota={"Chương 1": 1, "Chương 2": 1},
+        type_quota={"MC": 1, "SA": 1},
+        clo_quota={("CLO_A", "Nhớ"): 1, ("CLO_B", "Vận dụng"): 1},
     )
 
     first = allocate_questions_for_plan(questions, plan, max_attempts=300)
@@ -146,34 +157,24 @@ def test_allocate_no_repeat_two_batches() -> None:
     assert second is None
 
 
-def test_allocate_respects_exact_type_quota_mc_ma() -> None:
-    questions = _sample_questions()
-    plan = QuotaPlan(
-        total_questions=2,
-        chapter_quota={"Chương 1": 2},
-        type_quota={"MC": 1, "MA": 1},
-        difficulty_quota={"easy": 1, "medium": 1},
-    )
-
-    picked = allocate_questions_for_plan(questions, plan, max_attempts=400)
-    assert picked is not None
-    picked_types = sorted(q.question_type for q in picked)
-    assert picked_types == ["MA", "MC"]
-
-
 def test_allocate_with_single_axis_quota_fills_remaining_freely() -> None:
     questions = _sample_questions()
     plan = QuotaPlan(
         total_questions=2,
         chapter_quota={},
         type_quota={"MC": 1},
-        difficulty_quota={},
+        clo_quota={("CLO_A", "Nhớ"): 1},
     )
 
     picked = allocate_questions_for_plan(questions, plan, max_attempts=120)
     assert picked is not None
     assert len(picked) == 2
-    assert sum(1 for q in picked if q.question_type == "MC") >= 1
+    assert any(q.question_type == "MC" for q in picked)
+    assert any(
+        (q.learning_outcome_code or "").strip() == "CLO_A"
+        and q.difficulty in {"easy", "Nhớ"}
+        for q in picked
+    )
 
 
 def test_allocate_ignores_empty_axes() -> None:
@@ -182,50 +183,60 @@ def test_allocate_ignores_empty_axes() -> None:
         total_questions=2,
         chapter_quota={},
         type_quota={},
-        difficulty_quota={"hard": 1},
+        clo_quota={("CLO_C", "Sáng tạo"): 1},
     )
 
     picked = allocate_questions_for_plan(questions, plan, max_attempts=120)
     assert picked is not None
     assert len(picked) == 2
-    assert sum(1 for q in picked if (q.difficulty or "").lower() == "hard") >= 1
+    assert any((q.learning_outcome_code or "", q.difficulty or "") == ("CLO_C", "Sáng tạo") for q in picked)
 
 
 def test_allocate_finds_feasible_combination_with_multi_axis_quota() -> None:
     questions = [
-        _q(1, chapter="Chương 1", qtype="MC", difficulty="medium"),
-        _q(2, chapter="Chương 1", qtype="MA", difficulty="hard"),
-        _q(3, chapter="Chương 2", qtype="MC", difficulty="hard"),
-        _q(4, chapter="Chương 2", qtype="BLANK", difficulty="medium"),
-        _q(5, chapter="Chương 2", qtype="BLANK", difficulty="hard"),
+        _q(1, chapter="Chương 1", clo="CLO_A", qtype="MC", difficulty="medium"),
+        _q(2, chapter="Chương 1", clo="CLO_A", qtype="MA", difficulty="hard"),
+        _q(3, chapter="Chương 2", clo="CLO_B", qtype="MC", difficulty="hard"),
+        _q(4, chapter="Chương 2", clo="CLO_B", qtype="BLANK", difficulty="medium"),
+        _q(5, chapter="Chương 2", clo="CLO_B", qtype="BLANK", difficulty="hard"),
     ]
     plan = QuotaPlan(
         total_questions=2,
         chapter_quota={"Chương 1": 1, "Chương 2": 1},
         type_quota={"MC": 1, "BLANK": 1},
-        difficulty_quota={"medium": 1, "hard": 1},
+        clo_quota={("CLO_A", "Hiểu"): 1, ("CLO_B", "hard"): 1},
     )
 
     picked = allocate_questions_for_plan(questions, plan, max_attempts=80)
     assert picked is not None
     assert len(picked) == 2
-    picked_ids = {q.id for q in picked}
-    assert picked_ids == {1, 5}
+    assert any(q.question_type == "MC" for q in picked)
+    assert any(q.question_type == "BLANK" for q in picked)
+    assert any(
+        (q.learning_outcome_code or "").strip() == "CLO_A"
+        and q.difficulty in {"medium", "Hiểu"}
+        for q in picked
+    )
+    assert any(
+        (q.learning_outcome_code or "").strip() == "CLO_B"
+        and q.difficulty in {"hard", "Vận dụng"}
+        for q in picked
+    )
 
 
 def test_diagnose_quota_infeasibility_returns_cross_axis_reason() -> None:
     questions = [
-        _q(1, chapter="Chương 1", qtype="MC", difficulty="easy"),
-        _q(2, chapter="Chương 2", qtype="BLANK", difficulty="easy"),
-        _q(3, chapter="Chương 2", qtype="MA", difficulty="hard"),
+        _q(1, chapter="Chương 1", clo="CLO_A", qtype="MC", difficulty="easy"),
+        _q(2, chapter="Chương 2", clo="CLO_B", qtype="BLANK", difficulty="easy"),
+        _q(3, chapter="Chương 2", clo="CLO_B", qtype="MA", difficulty="hard"),
     ]
     plan = QuotaPlan(
         total_questions=2,
         chapter_quota={"Chương 1": 1, "Chương 2": 1},
         type_quota={"MC": 1, "BLANK": 1},
-        difficulty_quota={"medium": 1, "hard": 1},
+        clo_quota={("CLO_A", "Vận dụng"): 1, ("CLO_B", "Vận dụng"): 1},
     )
 
     reasons = diagnose_quota_infeasibility(questions, plan)
     assert reasons
-    assert any("Độ khó 'medium'" in msg or "giao nhau" in msg for msg in reasons)
+    assert any("CLO 'CLO_A'" in msg or "giao nhau" in msg for msg in reasons)

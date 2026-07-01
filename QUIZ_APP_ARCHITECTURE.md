@@ -444,11 +444,11 @@ Ràng buộc:
 ### 6.1. Luồng import câu hỏi
 
 1. Người dùng chọn file Excel hoặc CSV.
-2. Hệ thống đọc file vào bộ nhớ tạm.
-3. Hệ thống validate từng dòng.
+2. Hệ thống kiểm tra trước các guardrails cơ bản như kích thước file và row budget.
+3. Hệ thống đọc file theo luồng xử lý phù hợp, validate từng dòng và gắn duplicate findings.
 4. Hệ thống hiển thị preview gồm số dòng hợp lệ, số dòng lỗi, chi tiết lỗi.
 5. Người dùng xác nhận import.
-6. Hệ thống ghi DB theo transaction.
+6. Hệ thống ghi DB theo transaction với commit/flush theo batch khi cần.
 7. Hệ thống ghi import log.
 
 ### 6.2. Luồng tạo bài kiểm tra
@@ -584,6 +584,13 @@ CREATE TABLE question_banks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     description TEXT,
+    school TEXT,
+    department TEXT,
+    subject TEXT,
+    course_code TEXT,
+    exam_title TEXT,
+    assessment_type TEXT,
+    course_learning_outcomes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(name)
@@ -703,6 +710,10 @@ CREATE TABLE app_settings (
 | quiz_questions.snapshot_options | JSON snapshot options tại thời điểm tạo quiz |
 | attempt_answers.answer_payload | JSON câu trả lời user, phù hợp từng loại câu hỏi |
 | attempts.remaining_seconds | Phục vụ resume attempt nếu có autosave |
+| attempts.extra_data | JSON metadata của attempt đang làm, hiện dùng để giữ `submitter_name` và `submitter_id` cho recovery ở EXAM mode |
+| question_banks.subject | Metadata học phần của ngân hàng; trong dialog ngân hàng hiển thị nhãn UI là `Học phần` |
+| question_banks.assessment_type | Metadata `Loại đánh giá` của ngân hàng, hiện hỗ trợ `Thường xuyên`, `Định kỳ`, `Tổng kết` |
+| question_banks.course_learning_outcomes | JSON list các `Chuẩn đầu ra học phần` gồm `code` và `description` |
 
 ### 8.4. Dạng dữ liệu answer_payload theo loại câu hỏi
 
@@ -760,6 +771,122 @@ CREATE TABLE app_settings (
 3. Mọi lỗi phải có thông báo dễ hiểu cho người dùng.
 4. Với hành động phá hủy như xóa ngân hàng, restore DB, nộp bài sớm, phải có confirm dialog.
 5. Study mode phải cho cảm giác phản hồi nhanh và ít áp lực hơn exam mode.
+6. Nếu phát hiện attempt `IN_PROGRESS` cho cùng quiz, màn hình làm bài phải cho người dùng chọn `tiếp tục` từ autosave gần nhất hoặc `bắt đầu lại` sau khi discard tiến độ cũ.
+7. Autosave phải lưu được cả câu trả lời đang mở trên màn hình hiện tại, không chỉ các câu đã chuyển trang.
+
+### 9.3.a. Question bank metadata dialog contract
+
+1. Dialog `Thêm/Sửa ngân hàng câu hỏi` hiện dùng nhãn `Học phần` cho field dữ liệu `subject`.
+2. Field `Loại đánh giá` là metadata riêng của ngân hàng và chỉ cho phép các giá trị chuẩn:
+   - `Thường xuyên`
+   - `Định kỳ`
+   - `Tổng kết`
+3. `Chuẩn đầu ra học phần` được lưu dưới dạng danh sách các row có:
+   - `Mã CLO`
+   - `Mô tả CLO`
+4. Mỗi row `CLO` chỉ hợp lệ khi có đủ cả `Mã CLO` và `Mô tả CLO`; row rỗng hoàn toàn được phép bỏ qua.
+5. Metadata `exam_title` cũ vẫn được giữ cho compatibility ở nhánh export, nhưng không còn là field active trong dialog metadata ngân hàng mới.
+
+### 9.4. Runtime resilience contract
+
+1. Autosave chính thức gồm hai phần: `attempt_answers.answer_payload` và `attempts.remaining_seconds`.
+2. `remaining_seconds` chỉ có ý nghĩa với mode có timer (`EXAM`, `PRACTICE`); `STUDY` có thể để `NULL`.
+3. Resume flow phải ưu tiên khôi phục attempt `IN_PROGRESS` mới nhất theo cùng `quiz_id`.
+4. Với EXAM mode, metadata nhận diện người làm bài phải được lưu cùng attempt để resume không yêu cầu nhập lại.
+5. Nếu người dùng chọn bắt đầu lại thay vì resume, attempt dở phải bị discard trước khi tạo attempt mới để tránh nhiều bản ghi `IN_PROGRESS` cho cùng quiz trong cùng luồng UI.
+6. Trước khi finalize attempt, runner phải flush một nhịp autosave cuối để giảm lệch giữa UI runtime state và DB.
+7. Nếu finalize persistence thất bại, UI phải giữ phiên làm bài trong trạng thái có thể retry; không được chuyển sang màn “đã hoàn thành”.
+8. Phiên được khôi phục từ autosave phải có tín hiệu UI rõ ràng để tránh người dùng tưởng rằng họ đang ở phiên mới hoàn toàn.
+9. Với EXAM mode, attempt resume chỉ hợp lệ khi còn đủ submitter metadata; nếu `time_up` nhưng finalize thất bại thì câu trả lời phải bị khóa và UI chỉ cho phép `Thử nộp lại`.
+
+### 9.5. Import resilience contract
+
+1. Import preview phải có guardrails cho dữ liệu lớn, ít nhất gồm row budget mềm/cứng và hard file-size limit.
+2. Khi vượt soft budget, preview vẫn được phép tiếp tục nhưng phải phát cảnh báo rõ ràng trong `ParseResult`.
+3. Khi vượt hard budget, preview phải bị chặn bằng `ERROR` cấp file để tránh import trong trạng thái rủi ro.
+4. DB duplicate detection phải ưu tiên query có chọn lọc theo candidate rows thay vì nạp toàn bộ bảng câu hỏi khi không cần thiết.
+5. Import commit phải hỗ trợ flush theo batch để giảm áp lực ORM/session khi nhập dữ liệu lớn.
+6. Import preview và commit phải ghi log đủ ngữ cảnh để điều tra file lớn, duplicate-heavy hoặc các nhánh thất bại.
+7. Baseline Phase 2 hiện tại được hiệu chỉnh theo benchmark cục bộ:
+   - soft row limit: `12.000`
+   - hard row limit: `30.000`
+   - soft file-size warning: `3 MB`
+   - hard file-size stop: `8 MB`
+
+### 9.6. Telemetry warning summary
+
+1. Dashboard phải có một vùng telemetry nhẹ để hiển thị import/runtime warnings gần đây.
+2. Trong Phase 2, telemetry summary được phép đọc từ log files hiện có; không bắt buộc thêm DB table riêng.
+3. Summary tối thiểu phải tách được `import warnings` và `runtime warnings`.
+4. Chỉ những event có giá trị chẩn đoán hành vi/rủi ro mới nên đi vào summary; không dùng cho metrics noise tần suất cao.
+
+### 9.7. Dashboard analytics contract
+
+1. Dashboard được phép hiển thị analytics tổng quan cho bài làm đã hoàn tất nếu dữ liệu lấy qua service/facade, không query trực tiếp trong UI.
+2. Baseline Phase 3 hiện tại gồm các chỉ số tổng quan từ `AttemptStatistics`: `total_attempts`, `avg_score_pct`, `best_score_pct`, `total_correct`, `total_incorrect`, `total_skipped`.
+3. Chỉ các attempt đã hoàn tất nghiệp vụ (`SUBMITTED`, `TIME_UP`, `COMPLETED`) mới được tính vào analytics dashboard; `IN_PROGRESS` phải bị loại trừ để tránh méo số liệu.
+4. Việc mở rộng dashboard analytics trong giai đoạn đầu phải tránh thay đổi schema nếu chưa thật sự cần thiết; ưu tiên tận dụng aggregate query và contract đã có.
+5. Baseline summary theo khoảng thời gian hiện tại phải giữ được các chỉ số: `total_attempts`, `active_banks`, `active_quizzes`, `avg_score_pct`, `best_score_pct`.
+6. Dashboard được phép hiển thị bảng breakdown theo ngân hàng nếu dữ liệu vẫn đi qua analytics module/facade; UI không tự tổng hợp từ raw attempts.
+7. Reporting analytics hiện cho phép hai dạng chọn thời gian:
+   - `time window preset` (`7`, `14`, `30` ngày)
+   - `custom date range` (`start_date`, `end_date`) cho cùng contract aggregate/reporting
+8. Nếu export analytics ra file, file chuẩn hiện tại là `reporting CSV`; nội dung phải phản ánh đúng snapshot đang lọc tại thời điểm export.
+
+### 9.8. Export preset/template contract
+
+1. Export/print workflow được phép có lớp `preset/template` để người dùng lưu và nạp lại cấu hình xuất đề thường dùng.
+2. Preset export phải đi qua facade hoặc service chuyên trách; UI không tự xử lý JSON/file schema như business contract chính.
+3. Preset tối thiểu phải bao gồm metadata đầu đề và các tùy chọn render quan trọng: `exam_type`, `numbering_mode`, `group_by_type`, `show_instructions`, `show_answer_sheet`, `show_scoring_rules`, `show_answer_key`.
+4. User-defined export presets nên được lưu ở vùng dữ liệu người dùng (`data/templates/...`) để phù hợp với desktop/local-first và hỗ trợ sao lưu cùng dữ liệu ứng dụng.
+5. Việc template hóa Phase 3 không được kéo logic render ra khỏi `WordRenderer`; preset chỉ cấu hình workflow, không thay đổi contract snapshot/render lõi.
+6. Preset mặc định được phép tự áp dụng theo ngữ cảnh; thứ tự ưu tiên hiện tại là `bank` > `department_subject` > `global`.
+
+### 9.9. Batch export and print profile contract
+
+1. Khi xuất nhiều đề, app nên tạo một package thư mục riêng với naming convention chuẩn hóa thay vì đổ file lẫn vào thư mục cha.
+2. Batch package tối thiểu phải có:
+   - thư mục package có timestamp
+   - tên file đề theo quy ước thống nhất
+   - file `README` hoặc manifest tóm tắt gói xuất
+3. Print profile phải là contract riêng của renderer, không trộn lẫn với logic chọn câu hỏi.
+4. Baseline print profile hiện tại gồm:
+   - `page_size`: `A4` hoặc `LETTER`
+   - `top/bottom/left/right margins`
+   - `show_student_info_block`
+5. Ẩn block thông tin sinh viên chỉ ảnh hưởng layout in ấn đầu trang; không được làm thay đổi nội dung câu hỏi, đáp án hay logic chấm điểm.
+6. Export workflow nâng cao hiện cho phép:
+   - `cover sheet` trước phần nội dung đề
+   - `watermark` dạng text trong header
+   - `answer-key` tách file `.docx` riêng khi cần phát đề và giữ đáp án tách biệt cho giáo viên
+7. Export workflow có thể thêm bước preview/xác nhận kế hoạch xuất trước khi render thật để giảm lỗi naming hoặc phát hành nhầm cấu hình.
+8. Baseline naming policy cho file đáp án tách riêng hiện hỗ trợ hai dạng:
+   - `suffix`: `<ten_file>_DAP_AN.docx`
+   - `prefix`: `DAP_AN_<ten_file>.docx`
+9. Preview export hiện tại được phép hiển thị `planned filenames`, `overwrite warnings` và `duplicate naming warnings` miễn là dùng chung naming helper với luồng save thật.
+10. Baseline preview cho export hiện mở rộng thành `dry-run package manifest`, trong đó có thể hiển thị:
+   - `planned filenames`
+   - `section/print profile summary`
+   - `print-content preview`
+   - `overwrite warnings`
+   - `naming conflict warnings`
+
+### 9.10. Dashboard reporting deepening contract
+
+1. Dashboard có thể mở rộng reporting sâu hơn miễn là vẫn đi qua facade/service layer và dùng aggregate query.
+2. Baseline mở rộng hiện tại gồm:
+   - mode breakdown: `EXAM`, `PRACTICE`, `STUDY`
+   - recent activity window: xu hướng 7 ngày gần đây với `attempt count` và `avg score %`
+3. Reporting Phase 3 vẫn không được tính `IN_PROGRESS` attempt vào các số liệu hiệu suất.
+4. Nếu cần tăng chiều sâu thêm theo ngân hàng, theo người làm bài hoặc theo khoảng thời gian linh hoạt, nên ưu tiên mở rộng analytics module trước khi thêm UI controls phức tạp.
+5. Baseline filter UI hiện tại cho reporting sâu hơn gồm:
+   - `bank`
+   - `quiz`
+   - `time window` preset (`7`, `14`, `30` ngày) hoặc `custom date range`
+6. Baseline reporting deepening hiện tại còn bao gồm:
+   - `window summary` cho tập dữ liệu đang lọc
+   - `bank breakdown` với `attempt count`, `quiz count`, `avg score %`, `best score %`, `last activity`
+7. Nếu người dùng export analytics từ dashboard, file `reporting CSV` phải dùng cùng filter state với reporting snapshot đang hiển thị.
 
 ---
 
@@ -960,11 +1087,106 @@ CHANGED | GitHub Copilot (GPT-5.3-Codex) | UI_VIETNAMESE_ACCENTS_2026_05_26 | Ch
 
 CHANGED | GitHub Copilot (GPT-5.3-Codex) | DESIGN_PHILOSOPHY_ALIGNMENT | Bổ sung §10.7 và §10.8 để chuẩn hóa triết lý thiết kế chiến lược theo "A Philosophy of Software Design": ưu tiên deep modules, giảm pass-through abstraction, kéo complexity xuống dưới, hạn chế broad exception và bắt buộc design review checklist trước khi merge.
 
+### 2026-06-30 (Roadmap alignment)
+
+CHANGED | OpenAI GPT-5.4 Thinking | ROADMAP_ALIGNMENT | Bổ sung roadmap nâng cấp 3 giai đoạn trong `QUIZ_APP_ROADMAP.md` để ưu tiên đồng bộ contract, ổn định dữ liệu/runtime và sau đó mở rộng giá trị người dùng. Đây là thay đổi tài liệu định hướng, không đổi schema database, không đổi business rules của các mode, và không mở rộng phạm vi v1.0/v1.1.
+
+CHANGED | OpenAI GPT-5.4 Thinking | PHASE_2_RUNTIME_RESILIENCE | Chính thức hóa contract runtime resilience cho quiz runner:
+- `attempts.extra_data` dùng để giữ metadata recovery của attempt, hiện chuẩn hóa cho `submitter_name` và `submitter_id`.
+- Autosave được định nghĩa là lưu đồng thời `attempt_answers.answer_payload` và `attempts.remaining_seconds`.
+- Resume flow ưu tiên attempt `IN_PROGRESS` mới nhất theo `quiz_id`, cho phép người dùng chọn tiếp tục hoặc discard để bắt đầu lại.
+- `QuizRunnerView` phải autosave cả câu trả lời đang mở trên màn hình hiện tại trước khi flush xuống persistence.
+
+CHANGED | OpenAI GPT-5.4 Thinking | PHASE_2_FINALIZE_FAILSAFE | Mở rộng runtime contract cho nhánh submit/finalize:
+- Runner phải chống double-finalize trong cùng phiên UI.
+- Trước khi finalize phải có một đợt flush autosave cuối cùng.
+- Nếu ghi kết quả thất bại, runner phải khôi phục trạng thái cho phép retry thay vì đưa attempt sang cảm giác “đã xong”.
+- UI runner có badge hiển thị khi phiên hiện tại là phiên resume từ autosave.
+
+CHANGED | OpenAI GPT-5.4 Thinking | PHASE_2_EXAM_POLICY_AND_IMPORT_RESILIENCE | Mở rộng contract Phase 2 theo hai hướng:
+- EXAM runtime policy: chỉ resume khi metadata người làm bài còn hợp lệ; nếu `time_up` nhưng finalize persistence lỗi thì câu trả lời bị khóa và UI chỉ cho phép `Thử nộp lại`.
+- Telemetry/runtime logging: runner ghi log theo event cho các nhánh resume/discard/invalid/finalize/retry để hỗ trợ chẩn đoán.
+- Import resilience: parser có row budgets mềm/cứng và hard file-size limit; duplicate detection thu hẹp query theo candidate rows; import commit flush theo batch để giảm áp lực ORM cho dữ liệu lớn.
+
+CHANGED | OpenAI GPT-5.4 Thinking | PHASE_2_BUDGET_TUNING_AND_TELEMETRY_SUMMARY | Chốt contract Phase 2 theo số đo thực tế và observability:
+- Import budget mặc định được tinh chỉnh theo benchmark cục bộ đến 20.000 dòng, thay cho ngưỡng cảnh báo quá sớm trước đó.
+- Dashboard có telemetry warning summary đọc từ log files để hiển thị import/runtime warnings gần đây mà chưa cần migration schema mới.
+
+CHANGED | OpenAI GPT-5.4 Thinking | PHASE_3_DASHBOARD_ATTEMPT_ANALYTICS | Khởi động Giai đoạn 3 theo lát cắt rủi ro thấp nhưng tác động cao:
+- `DashboardFacade` tải thêm analytics tổng quan cho bài làm đã hoàn tất qua `AttemptStatistics`.
+- `DashboardView` hiển thị section `Hiệu suất làm bài` với các chỉ số lượt làm bài, điểm trung bình, điểm cao nhất và tổng đúng/sai/bỏ qua.
+- Không thay đổi schema database, không đổi grading rules, không đưa query trực tiếp vào UI.
+
+CHANGED | OpenAI GPT-5.4 Thinking | PHASE_3_EXPORT_PRESET_WORKFLOW | Mở nhánh export/print workflow theo hướng template hóa an toàn:
+- `ExamExportPanel` có thêm thao tác lưu, nạp và xóa preset xuất đề để tái sử dụng cấu hình in ấn thường dùng.
+- Thêm `ExportTemplateFacade` và `ExportPresetStore` để giữ boundary `UI -> facade -> file-based preset store`.
+- Preset được lưu trong `data/templates/exam_export_presets/`, không đổi schema database và không thay đổi contract render của `WordRenderer`.
+
+CHANGED | OpenAI GPT-5.4 Thinking | PHASE_3_EXPORT_DEFAULTS_BATCH_AND_PRINT_PROFILE | Tiếp tục nhánh export/print workflow theo đúng thứ tự tác động/rủi ro:
+- preset mặc định hỗ trợ tự áp dụng theo `ngân hàng`, `khoa + môn` hoặc `mặc định chung`;
+- batch export nhiều đề tạo package riêng có naming convention chuẩn in ấn và file `README`;
+- `WordRenderer` nhận thêm print profile cho `A4/Letter`, margins và tùy chọn ẩn/hiện block thông tin sinh viên;
+- vẫn giữ nguyên boundary: UI gọi facade/store hoặc renderer contract, không trộn file I/O và print schema trực tiếp vào business logic chọn câu.
+
+CHANGED | OpenAI GPT-5.4 Thinking | PHASE_3_EXPORT_COVER_WATERMARK_AND_DEEPER_REPORTING | Tiếp tục hoàn thiện Giai đoạn 3 theo hai nhánh đã ưu tiên:
+- export/print workflow có thêm `cover sheet`, `watermark` và khả năng tách `answer-key` thành file `.docx` riêng;
+- dashboard reporting mở rộng thêm `mode breakdown` và `recent 7-day activity` mà không đổi schema;
+- các thay đổi vẫn giữ pattern `UI -> facade/service -> renderer/analytics module` và được khóa bằng regression tests tương ứng.
+
+CHANGED | OpenAI GPT-5.4 Thinking | PHASE_3_FILTERED_REPORTING_AND_EXPORT_PREVIEW | Tiếp tục Giai đoạn 3 với các bước hợp lý tiếp theo:
+- dashboard reporting có filter theo `ngân hàng`, `quiz` và `khoảng thời gian`;
+- export workflow có `cover sheet template`, `watermark preset`, `answer-key naming policy` và bước preview/xác nhận kế hoạch xuất;
+- mục tiêu vẫn là tăng giá trị sử dụng thực tế nhưng không đưa query/file-schema trực tiếp trở lại UI layer.
+
+DONE | OpenAI GPT-5.4 Thinking | PHASE_3_DEEP_REPORTING_AND_BATCH_CONFLICT_SUMMARY | Hoàn tất các lát cắt còn lại có tác động cao của Giai đoạn 3:
+- dashboard reporting bổ sung `window summary` và `bank breakdown` cho tập dữ liệu đã lọc theo `ngân hàng / quiz / khoảng thời gian`;
+- analytics vẫn chỉ dùng aggregate query qua `AttemptStatistics` và `DashboardFacade`, không đổi schema và không kéo raw query về UI;
+- batch export preview dùng chung naming helper với luồng save thật để hiển thị `planned filenames`, cảnh báo ghi đè và summary naming conflict trước khi render;
+- contract export/analytics mới được khóa bằng regression tests cho analytics aggregates, facade snapshot và batch naming helpers.
+
+DONE | OpenAI GPT-5.4 Thinking | PHASE_3_CUSTOM_RANGE_CSV_AND_DRY_RUN_MANIFEST | Mở rộng nốt các đường giá trị cao còn lại của Giai đoạn 3:
+- dashboard reporting hỗ trợ thêm `custom date range` cùng contract với các preset `7/14/30 ngày`;
+- dashboard có thể `xuất reporting CSV` theo đúng snapshot đang lọc, không tự dựng contract khác ngoài facade/analytics module;
+- export preview được nâng từ summary ngắn thành `dry-run package manifest` có `planned filenames`, `print profile`, `print-content preview`, `overwrite warnings`, `naming conflict warnings`;
+- tài liệu và thuật ngữ được đồng bộ theo workflow `Docs sweep -> Policy sweep -> Consistency sweep -> Final glossary sweep`.
+
+CHANGED | OpenAI GPT-5.4 Thinking | QUESTION_BANK_METADATA_DIALOG_REDESIGN | Thiết kế lại metadata dialog cho `Ngân hàng câu hỏi`:
+- `subject` tiếp tục là field dữ liệu nền nhưng nhãn UI active trong dialog đổi thành `Học phần`;
+- thêm `assessment_type` như metadata riêng của ngân hàng với ba giá trị chuẩn `Thường xuyên`, `Định kỳ`, `Tổng kết`;
+- thêm `course_learning_outcomes` dưới dạng JSON list các row `code/description`;
+- `exam_title` cũ được giữ lại cho compatibility ở nhánh export nhưng không còn là field active trong dialog metadata ngân hàng.
+
+### 2026-06-30 (Phase 1 implementation started)
+
+CHANGED | OpenAI GPT-5.4 Thinking | PHASE_1_CONTRACT_AND_GUARDRAILS | Bắt đầu triển khai Giai đoạn 1 của roadmap nâng cấp theo hướng giảm rủi ro nhưng tăng độ đồng bộ hệ thống. Thay đổi chính:
+- thêm `QuizBuilderFacade` để kéo session orchestration ra khỏi `QuizBuilderView`;
+- bổ sung guardrail test chặn UI builder quay lại import ORM model hoặc mở session trực tiếp;
+- cấu hình pytest dùng thư mục tạm trong workspace để giảm lỗi môi trường Windows;
+- đồng bộ contract BLANK nhiều chỗ trống trong tài liệu import với implementation hiện tại.
+
+CHANGED | OpenAI GPT-5.4 Thinking | PHASE_1_UI_BOUNDARY_CONTINUED | Tiếp tục kéo session orchestration ra khỏi UI ở các luồng export và runner setup:
+- `ExamExportPanel` không còn tự mở DB session; thay vào đó dùng `QuizBuilderFacade` để lấy detached questions đã eager-load options;
+- `QuizRunnerSetupMixin` không còn tự mở DB session; dùng `QuizBuilderFacade` cho available count, selection và create quiz;
+- thêm guardrail test để khóa boundary này trong `tests/unit/test_ui_layer_boundaries.py`.
+
+DONE | OpenAI GPT-5.4 Thinking | PHASE_1_UI_SESSION_BOUNDARY_CLOSED | Hoàn tất dọn session direct access ở các file UI nghi ngờ còn lại:
+- `ResultHistoryView` dùng `HistoryFacade` thay cho direct session orchestration;
+- `MainWindow` dùng `SettingsFacade` để đọc theme đã persist;
+- `BankCombo` dùng `QuestionBankFacade` để nạp metadata ngân hàng;
+- thêm guardrail test khóa boundary cho các điểm trên.
+
+ADDED | OpenAI GPT-5.4 Thinking | POLICY_AND_TERMINOLOGY_SYNC_WORKFLOW | Bổ sung quy trình chuẩn trong `CONTRIBUTING.md` để đồng bộ policy và thuật ngữ mỗi khi thay đổi feature hoặc contract:
+- `Docs sweep`
+- `Policy sweep`
+- `Consistency sweep`
+- `Final glossary sweep`
+- Quy trình này áp dụng cho các thay đổi liên quan tới quyền, workflow nghiệp vụ, route truy cập, trạng thái dữ liệu, thuật ngữ UI hoặc service contract.
+
 Migration Notes: Không có thay đổi schema, không cần migration.
 
 ---
 
 END OF ARCHITECTURE DOCUMENT
 
-Last Updated: 2026-05-06
+Last Updated: 2026-06-30
 Version: 1.1.1

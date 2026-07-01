@@ -30,6 +30,7 @@ from modules.quiz_runner.submit_handler import build_graded_result
 from modules.quiz_runner.timer_controller import QuizTimerController
 from ui.dialogs.submit_dialog import SubmitDialog
 from ui.dialogs.submitter_info_dialog import SubmitterInfoDialog
+from ui.facades.quiz_builder_facade import QuizBuilderFacade
 from ui.views.quiz_runner_layout import (
     build_done_panel,
     build_running_panel,
@@ -60,6 +61,7 @@ class QuizRunnerView(QuizRunnerSetupMixin, QuizRunnerStateProxyMixin, QWidget):
         self._submission_service = SubmissionService()
         self._runner_controller = QuizRunnerSessionController(self._quiz_service)
         self._selector = QuestionSelector()
+        self._builder_facade = QuizBuilderFacade(self._selector)
         self._state = QuizRunnerState()
         self._selected_question_ids: list[int] = []
 
@@ -75,6 +77,12 @@ class QuizRunnerView(QuizRunnerSetupMixin, QuizRunnerStateProxyMixin, QWidget):
         self._autosave_timer.timeout.connect(self._autosave)
 
         self._build_ui()
+
+    def _log_runtime_event(self, event: str, **context) -> None:
+        parts = [f"event={event}"]
+        for key in sorted(context):
+            parts.append(f"{key}={context[key]}")
+        logger.info(" ".join(parts))
 
     def load_quiz(self, quiz_id: int) -> None:
         """Called by MainWindow after QuizBuilderView emits quiz_started."""
@@ -112,11 +120,11 @@ class QuizRunnerView(QuizRunnerSetupMixin, QuizRunnerStateProxyMixin, QWidget):
         for cb in (
             self._setup_cb_mc,
             self._setup_cb_ma,
+            self._setup_cb_tf,
             self._setup_cb_blank,
             self._setup_cb_sa,
-            self._setup_cb_easy,
-            self._setup_cb_medium,
-            self._setup_cb_hard,
+            self._setup_cb_es,
+            *self._setup_difficulty_cbs,
         ):
             cb.stateChanged.connect(self._update_setup_available_count)
         self._setup_pool_btn.clicked.connect(self._on_pick_pool)
@@ -157,41 +165,36 @@ class QuizRunnerView(QuizRunnerSetupMixin, QuizRunnerStateProxyMixin, QWidget):
             return
         self._mode = info.mode
 
-        # EXAM: collect submitter info
-        if self._mode == QuizMode.EXAM.value:
-            dlg = SubmitterInfoDialog(info.title, parent=self)
-            if dlg.exec() != QDialog.DialogCode.Accepted:
-                return
-            self._submitter_name = dlg.submitter_name
-            self._submitter_id = dlg.submitter_id
-        else:
-            self._submitter_name = ""
-            self._submitter_id = ""
-
-        # Load quiz questions + create attempt
-        try:
-            self._quiz_questions, self._attempt_id = self._runner_controller.prepare_attempt(
-                self._pending_quiz_id
-            )
-        except Exception as exc:
-            logger.error(f"Session start failed: {exc}")
-            QMessageBox.critical(self, "Lỗi", f"Không thể bắt đầu bài:\n{exc}")
+        runtime = self._resolve_runtime_session(info.title)
+        if runtime is None:
             return
 
-        # Reset in-memory state
-        self._answers = {}
+        self._quiz_questions = runtime.snapshots
+        self._attempt_id = runtime.attempt_id
+        self._answers = dict(runtime.answers)
         self._confirmed = set()
         self._current_index = 0
-        self._started_at = datetime.now(UTC)
+        self._started_at = runtime.started_at or datetime.now(UTC)
+        self._remaining_seconds = runtime.remaining_seconds
+        self._submitter_name = runtime.submitter_name
+        self._submitter_id = runtime.submitter_id
+        self._resumed_from_autosave = runtime.resumed
+        self._finalizing = False
+        self._retry_submit_only = False
         self._quiz_title = info.title
+        self._submit_btn.setText("Nộp bài")
 
         self._update_running_header()
         self._show_question(0)
         self._stack.setCurrentIndex(_PANEL_RUNNING)
 
         if ModePolicy.requires_timer(self._mode):
-            time_limit = info.time_limit or 30
-            self._timer_controller.start(time_limit * 60)
+            timer_seconds = runtime.remaining_seconds
+            if timer_seconds is None:
+                timer_seconds = (info.time_limit or 30) * 60
+            self._timer_controller.start(timer_seconds)
+            self._remaining_seconds = timer_seconds
+            self._on_timer_tick(timer_seconds)
 
         self._autosave_timer.start()
 
@@ -203,9 +206,10 @@ class QuizRunnerView(QuizRunnerSetupMixin, QuizRunnerStateProxyMixin, QWidget):
         mode_label = {
             QuizMode.EXAM.value: "Kiểm tra",
             QuizMode.PRACTICE.value: "Luyện tập",
-            QuizMode.STUDY.value: "Học tập",
+            QuizMode.STUDY.value: "Ôn tập",
         }.get(self._mode, self._mode)
         self._header_title.setText(f"{self._quiz_title}  [{mode_label}]")
+        self._resume_badge.setVisible(self._resumed_from_autosave)
 
         if self._mode == QuizMode.EXAM.value:
             self._submitter_bar.show()
@@ -261,6 +265,8 @@ class QuizRunnerView(QuizRunnerSetupMixin, QuizRunnerStateProxyMixin, QWidget):
         payload = self._answers.get(qid)
         if payload:
             self._answer_renderer.restore_answer(qtype, payload)
+        if self._retry_submit_only:
+            self._answer_renderer.set_input_enabled(False)
 
         # STUDY mode state
         is_confirmed = qid in self._confirmed
@@ -340,10 +346,18 @@ class QuizRunnerView(QuizRunnerSetupMixin, QuizRunnerStateProxyMixin, QWidget):
     # -- Timer ---------------------------------------------------------
 
     def _on_timer_tick(self, remaining: int) -> None:
+        self._remaining_seconds = remaining
         mins, secs = divmod(remaining, 60)
         self._timer_label.setText(f"\u23f1 {mins:02d}:{secs:02d}")
 
     def _on_time_up(self) -> None:
+        self._log_runtime_event(
+            "time_up",
+            attempt_id=self._attempt_id,
+            mode=self._mode,
+            answered=len([p for p in self._answers.values() if p]),
+            total=len(self._quiz_questions),
+        )
         QMessageBox.warning(
             self, "Hết giờ", "Hết thời gian! Bài làm sẽ được nộp tự động."
         )
@@ -352,17 +366,33 @@ class QuizRunnerView(QuizRunnerSetupMixin, QuizRunnerStateProxyMixin, QWidget):
     # -- Autosave ------------------------------------------------------
 
     def _autosave(self) -> None:
-        if not self._attempt_id or not self._answers:
+        if not self._attempt_id:
             return
+        self._save_current_answer()
         try:
-            self._runner_controller.autosave_answers(self._attempt_id, self._answers)
-            logger.debug(f"Autosaved {len(self._answers)} answers for attempt {self._attempt_id}")
+            self._runner_controller.autosave_progress(
+                self._attempt_id,
+                self._answers,
+                self._remaining_seconds,
+            )
+            logger.debug(
+                "Autosaved %s answers for attempt %s (remaining=%s)"
+                % (len(self._answers), self._attempt_id, self._remaining_seconds)
+            )
         except Exception as exc:
             logger.warning(f"Autosave failed: {exc}")
 
     # -- Submit --------------------------------------------------------
 
     def _on_submit_clicked(self) -> None:
+        if self._finalizing:
+            return
+        self._log_runtime_event(
+            "submit_clicked",
+            attempt_id=self._attempt_id,
+            mode=self._mode,
+            retry_only=self._retry_submit_only,
+        )
         self._save_current_answer()
         total = len(self._quiz_questions)
         answered = len([p for p in self._answers.values() if p])
@@ -378,8 +408,34 @@ class QuizRunnerView(QuizRunnerSetupMixin, QuizRunnerStateProxyMixin, QWidget):
         self._finalize_session(time_up=False)
 
     def _finalize_session(self, *, time_up: bool) -> None:
+        if self._finalizing:
+            return
+
+        self._finalizing = True
+        self._set_navigation_enabled(False)
+        self._save_current_answer()
         self._timer_controller.stop()
         self._autosave_timer.stop()
+        self._log_runtime_event(
+            "finalize_started",
+            attempt_id=self._attempt_id,
+            mode=self._mode,
+            time_up=time_up,
+            retry_only=self._retry_submit_only,
+            answered=len([p for p in self._answers.values() if p]),
+            total=len(self._quiz_questions),
+            remaining=self._remaining_seconds,
+        )
+
+        if self._attempt_id:
+            try:
+                self._runner_controller.autosave_progress(
+                    self._attempt_id,
+                    self._answers,
+                    0 if time_up else self._remaining_seconds,
+                )
+            except Exception as exc:
+                logger.warning(f"Finalize pre-save failed: {exc}")
 
         graded_rows, result_data = build_graded_result(
             self._quiz_questions,
@@ -405,12 +461,35 @@ class QuizRunnerView(QuizRunnerSetupMixin, QuizRunnerStateProxyMixin, QWidget):
                     result_data.duration_seconds,
                 )
             except Exception as exc:
+                self._log_runtime_event(
+                    "finalize_failed",
+                    attempt_id=self._attempt_id,
+                    mode=self._mode,
+                    time_up=time_up,
+                    retry_only=self._retry_submit_only,
+                    error=type(exc).__name__,
+                )
                 logger.error(f"finalize_attempt failed: {exc}")
+                self._recover_after_finalize_failure(time_up=time_up)
+                QMessageBox.critical(
+                    self,
+                    "Chưa thể hoàn tất nộp bài",
+                    self._finalize_failure_message(time_up=time_up),
+                )
+                return
 
+        self._log_runtime_event(
+            "finalize_succeeded",
+            attempt_id=self._attempt_id,
+            mode=self._mode,
+            time_up=time_up,
+            duration=result_data.duration_seconds,
+        )
         if self._mode == QuizMode.EXAM.value:
             self._show_exam_submit_dialog(result_data)
         else:
             self._show_non_exam_summary(result_data)
+        self._finalizing = False
 
     # -- Result display ------------------------------------------------
 
@@ -440,6 +519,172 @@ class QuizRunnerView(QuizRunnerSetupMixin, QuizRunnerStateProxyMixin, QWidget):
         self._update_setup_panel()
         self._stack.setCurrentIndex(_PANEL_SETUP)
 
+    def _recover_after_finalize_failure(self, *, time_up: bool) -> None:
+        self._finalizing = False
+        self._retry_submit_only = bool(
+            time_up and ModePolicy.lock_answer_editing_after_time_up_finalize_failure(self._mode)
+        )
+        allow_interaction = not self._retry_submit_only
+        self._set_navigation_enabled(allow_interaction)
+        if allow_interaction:
+            self._autosave_timer.start()
+        if ModePolicy.requires_timer(self._mode) and not time_up:
+            remaining = self._remaining_seconds or 0
+            if remaining > 0:
+                self._timer_controller.start(remaining)
+                self._on_timer_tick(remaining)
+            else:
+                self._timer_label.setText("\u23f1 00:00")
+        elif ModePolicy.requires_timer(self._mode):
+            self._remaining_seconds = 0
+            self._timer_label.setText("\u23f1 00:00")
+        if self._retry_submit_only:
+            self._answer_renderer.set_input_enabled(False)
+            self._submit_btn.setEnabled(True)
+            self._submit_btn.setText("Thử nộp lại")
+        else:
+            self._submit_btn.setText("Nộp bài")
+        self._log_runtime_event(
+            "finalize_retry_ready",
+            attempt_id=self._attempt_id,
+            mode=self._mode,
+            retry_only=self._retry_submit_only,
+            time_up=time_up,
+            remaining=self._remaining_seconds,
+        )
+
+    def _set_navigation_enabled(self, enabled: bool) -> None:
+        self._prev_btn.setEnabled(enabled and self._current_index > 0)
+        total = len(self._quiz_questions)
+        if ModePolicy.show_per_question_feedback(self._mode):
+            is_confirmed = False
+            if self._quiz_questions:
+                current_qid = self._quiz_questions[self._current_index].quiz_question_id
+                is_confirmed = current_qid in self._confirmed
+            self._next_btn.setEnabled(enabled and is_confirmed and self._current_index < total - 1)
+            self._confirm_btn.setEnabled(enabled and not is_confirmed)
+        else:
+            self._next_btn.setEnabled(enabled and self._current_index < total - 1)
+        self._submit_btn.setEnabled(enabled)
+
+    def _resolve_runtime_session(self, quiz_title: str):
+        if self._pending_quiz_id is None:
+            return None
+
+        resumed = self._runner_controller.load_resumable_attempt(self._pending_quiz_id)
+        if resumed is not None:
+            if not ModePolicy.can_resume_attempt(
+                self._mode,
+                submitter_name=resumed.submitter_name,
+                submitter_id=resumed.submitter_id,
+                remaining_seconds=resumed.remaining_seconds,
+            ):
+                self._log_runtime_event(
+                    "resume_invalid",
+                    attempt_id=resumed.attempt_id,
+                    mode=self._mode,
+                    remaining=resumed.remaining_seconds,
+                    has_submitter=bool(resumed.submitter_name and resumed.submitter_id),
+                )
+                QMessageBox.information(
+                    self,
+                    "Không thể khôi phục bài làm",
+                    (
+                        "Bài làm đang dở không còn đủ điều kiện để tiếp tục.\n"
+                        "Ứng dụng sẽ bỏ tiến độ cũ và tạo phiên mới theo policy hiện tại."
+                    ),
+                )
+                self._runner_controller.delete_attempt(resumed.attempt_id)
+                resumed = None
+
+        if resumed is not None:
+            reply = QMessageBox.question(
+                self,
+                "Khôi phục bài làm",
+                (
+                    "Phát hiện một bài làm đang dở cho bài kiểm tra này.\n"
+                    "Chọn Yes để tiếp tục từ autosave gần nhất.\n"
+                    "Chọn No để bỏ tiến độ cũ và bắt đầu lại."
+                ),
+                QMessageBox.StandardButton.Yes
+                | QMessageBox.StandardButton.No
+                | QMessageBox.StandardButton.Cancel,
+            )
+            if reply == QMessageBox.StandardButton.Cancel:
+                self._log_runtime_event(
+                    "resume_cancelled",
+                    attempt_id=resumed.attempt_id,
+                    mode=self._mode,
+                )
+                return None
+            if reply == QMessageBox.StandardButton.Yes:
+                self._log_runtime_event(
+                    "resume_accepted",
+                    attempt_id=resumed.attempt_id,
+                    mode=self._mode,
+                    remaining=resumed.remaining_seconds,
+                    answered=len([p for p in resumed.answers.values() if p]),
+                )
+                return resumed
+            self._log_runtime_event(
+                "resume_discarded",
+                attempt_id=resumed.attempt_id,
+                mode=self._mode,
+            )
+            self._runner_controller.delete_attempt(resumed.attempt_id)
+
+        submitter_name = ""
+        submitter_id = ""
+        initial_remaining_seconds = (
+            (self._quiz_info.time_limit or 30) * 60
+            if self._quiz_info and ModePolicy.requires_timer(self._mode)
+            else None
+        )
+
+        if self._mode == QuizMode.EXAM.value:
+            dlg = SubmitterInfoDialog(quiz_title, parent=self)
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                self._log_runtime_event(
+                    "start_cancelled_submitter_dialog",
+                    quiz_id=self._pending_quiz_id,
+                    mode=self._mode,
+                )
+                return None
+            submitter_name = dlg.submitter_name
+            submitter_id = dlg.submitter_id
+
+        try:
+            prepared = self._runner_controller.prepare_attempt(
+                self._pending_quiz_id,
+                submitter_name=submitter_name,
+                submitter_id=submitter_id,
+                remaining_seconds=initial_remaining_seconds,
+            )
+            self._log_runtime_event(
+                "attempt_started",
+                attempt_id=prepared.attempt_id,
+                quiz_id=self._pending_quiz_id,
+                mode=self._mode,
+                resumed=False,
+            )
+            return prepared
+        except Exception as exc:
+            logger.error(f"Session start failed: {exc}")
+            QMessageBox.critical(self, "Lỗi", f"Không thể bắt đầu bài:\n{exc}")
+            return None
+
+    def _finalize_failure_message(self, *, time_up: bool) -> str:
+        if time_up and ModePolicy.lock_answer_editing_after_time_up_finalize_failure(self._mode):
+            return (
+                "Đã hết giờ nhưng hệ thống chưa ghi nhận được kết quả.\n"
+                "Câu trả lời đã bị khóa theo policy của chế độ Kiểm tra.\n"
+                "Bạn có thể nhấn 'Thử nộp lại' để gửi lại cùng bài làm."
+            )
+        return (
+            "Không thể ghi nhận kết quả lúc này.\n"
+            "Bài làm đã được giữ ở trạng thái đang làm để bạn có thể thử lại."
+        )
+
 
 # ---------------------------------------------------------------------------
 # Module-level helpers
@@ -447,9 +692,11 @@ class QuizRunnerView(QuizRunnerSetupMixin, QuizRunnerStateProxyMixin, QWidget):
 
 def _type_label(qtype: str) -> str:
     return {
-        "MC": "Multiple Choice",
-        "MA": "Multiple Answer",
-        "BLANK": "Điền khuyết",
+        "MC": "Trắc nghiệm 1 đáp án",
+        "MA": "Trắc nghiệm nhiều đáp án",
+        "TF": "Đúng/Sai",
+        "BLANK": "Điền vào chỗ trống",
         "SA": "Trả lời ngắn",
+        "ES": "Tự luận",
     }.get(qtype, qtype)
 

@@ -10,6 +10,8 @@ Business rules enforced (ARCHITECTURE §5.4, §7.5):
             For multi-blank questions (blank_count > 1), the user separates
             answers with "||" and each part is matched positionally.
     SA    : identical grading logic to BLANK (separate class for clarity).
+    ES    : identical grading logic to SA/BLANK (separate class for clarity).
+    TF    : identical to MC with exactly one correct option.
 
 Normalisation rules applied when trimming/casing flags are set:
     trim_whitespace (default True)  – strip leading/trailing whitespace.
@@ -186,6 +188,34 @@ class SAEvaluator:
         )
 
 
+class EssayEvaluator:
+    """Evaluator for Essay questions.
+
+    Kept separate from Short Answer for future rubric-based scoring, but
+    currently shares the same exact-answer workflow.
+    """
+
+    @staticmethod
+    def grade(
+        accepted: list[str],
+        case_sensitive: bool,
+        trim_whitespace: bool,
+        payload: dict,
+        point_value: float,
+    ) -> GradeResult:
+        return BlankEvaluator.grade(
+            accepted, case_sensitive, trim_whitespace, payload, point_value
+        )
+
+
+class TrueFalseEvaluator:
+    """Evaluator for True/False questions."""
+
+    @staticmethod
+    def grade(options: list[dict], payload: dict, point_value: float) -> GradeResult:
+        return MCEvaluator.grade(options, payload, point_value)
+
+
 # ---------------------------------------------------------------------------
 # Dispatch engine
 # ---------------------------------------------------------------------------
@@ -208,8 +238,8 @@ class GradingEngine:
         ----------
         qq_dict:
             Snapshot dict produced by ``QuestionSelector.build_snapshots()``.
-            Must contain: ``type``, ``point_value``, ``options`` (MC/MA),
-            ``accepted_answers`` (BLANK/SA), ``case_sensitive``,
+        Must contain: ``type``, ``point_value``, ``options`` (MC/MA/TF),
+            ``accepted_answers`` (BLANK/SA/ES), ``case_sensitive``,
             ``trim_whitespace``.
         payload:
             Answer payload from the runner.  Empty dict ``{}`` means skipped.
@@ -223,7 +253,10 @@ class GradingEngine:
         if qtype == "MA":
             return MAEvaluator.grade(qq_dict.get("options", []), payload, point)
 
-        if qtype in ("BLANK", "SA"):
+        if qtype == "TF":
+            return TrueFalseEvaluator.grade(qq_dict.get("options", []), payload, point)
+
+        if qtype in ("BLANK", "SA", "ES"):
             acc = qq_dict.get("accepted_answers", [])
             cs = qq_dict.get("case_sensitive", False)
             tw = qq_dict.get("trim_whitespace", True)
@@ -236,6 +269,14 @@ class GradingEngine:
                     payload=payload,
                     point_value=point,
                     blank_count=blank_count,
+                )
+            if qtype == "ES":
+                return EssayEvaluator.grade(
+                    accepted=acc,
+                    case_sensitive=cs,
+                    trim_whitespace=tw,
+                    payload=payload,
+                    point_value=point,
                 )
             return SAEvaluator.grade(
                 accepted=acc,

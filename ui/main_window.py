@@ -32,17 +32,18 @@ from PySide6.QtWidgets import (
 
 from config.paths import APP_DIR
 from config.settings import settings
+from ui.facades.settings_facade import SettingsFacade
 from ui.styles.themes import get_stylesheet
 
 # Nav item definitions: (label, module_path, class_name)
 # Views are loaded lazily on first navigation to reduce startup time.
 _NAV_ITEMS: list[tuple[str, str, str]] = [
-    ("🏠  Dashboard",        "ui.views.dashboard_view",      "DashboardView"),
+    ("🏠  Tổng quan",        "ui.views.dashboard_view",      "DashboardView"),
     ("📚  Ngân hàng",        "ui.views.question_bank_view",  "QuestionBankView"),
-    ("📥  Import",           "ui.views.import_view",         "ImportView"),
+    ("📥  Nhập dữ liệu",     "ui.views.import_view",         "ImportView"),
     ("✏️  Tạo bài kiểm tra", "ui.views.quiz_builder_view",   "QuizBuilderView"),
-    ("▶️  Làm bài",          "ui.views.quiz_runner_view",    "QuizRunnerView"),
-    ("📋  Lịch sử",          "ui.views.result_history_view", "ResultHistoryView"),
+    ("▶️  Làm bài kiểm tra", "ui.views.quiz_runner_view",    "QuizRunnerView"),
+    ("📋  Lịch sử làm bài",  "ui.views.result_history_view", "ResultHistoryView"),
     ("⚙️  Cài đặt",          "ui.views.settings_view",       "SettingsView"),
 ]
 
@@ -52,6 +53,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
+        self._settings_facade = SettingsFacade()
         self.setWindowTitle(settings.app_name)
         self.setMinimumSize(960, 640)
         _icon_path = APP_DIR / "assets" / "icons" / "app_icon.ico"
@@ -63,7 +65,7 @@ class MainWindow(QMainWindow):
         self._init_theme_from_db()   # override .env default with DB-persisted value
         self._apply_theme()
         self._setup_shortcuts()
-        self._navigate(0)  # show Dashboard by default
+        self._navigate(0)  # show Tổng quan by default
 
     # ------------------------------------------------------------------
     # UI construction
@@ -197,10 +199,7 @@ class MainWindow(QMainWindow):
     def _init_theme_from_db(self) -> None:
         """Read the persisted theme from the DB and update the in-memory setting."""
         try:
-            from core.database.session import get_session
-            from core.domain.services.settings_service import SettingsService
-            with get_session() as session:
-                theme = SettingsService.get_theme(session)
+            theme = self._settings_facade.get_theme()
             settings.app_theme = theme  # type: ignore[assignment]
         except Exception:
             pass  # keep the .env / default value on failure

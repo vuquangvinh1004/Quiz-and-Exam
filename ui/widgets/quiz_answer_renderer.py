@@ -1,6 +1,6 @@
 """Answer rendering component for quiz runner.
 
-Encapsulates UI rendering and answer payload extraction for MC/MA/BLANK/SA.
+Encapsulates UI rendering and answer payload extraction for MC/MA/TF/BLANK/SA/ES.
 """
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ class QuizAnswerRenderer:
         qtype = qq.type
         opts = qq.options or []
 
-        if qtype == "MC":
+        if qtype in ("MC", "TF"):
             self._options_container.show()
             self._text_answer.hide()
             self._radio_keys = []
@@ -93,7 +93,7 @@ class QuizAnswerRenderer:
 
     def current_payload(self, qtype: str) -> dict:
         """Read current UI input and convert to answer payload."""
-        if qtype == "MC":
+        if qtype in ("MC", "TF"):
             for i, rb in enumerate(self._radio_pool):
                 if rb.isVisible() and rb.isChecked() and i < len(self._radio_keys):
                     return {"selected": self._radio_keys[i]}
@@ -112,7 +112,7 @@ class QuizAnswerRenderer:
 
     def restore_answer(self, qtype: str, payload: dict) -> None:
         """Restore persisted answer payload into rendered widgets."""
-        if qtype == "MC":
+        if qtype in ("MC", "TF"):
             key = payload.get("selected", "")
             for i, rb in enumerate(self._radio_pool):
                 if rb.isVisible() and i < len(self._radio_keys):

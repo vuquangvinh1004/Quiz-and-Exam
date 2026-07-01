@@ -12,6 +12,7 @@ from config.paths import (
     EXPORTS_DIR,
     IMPORTS_DIR,
     LOGS_DIR,
+    TEMPLATES_DIR,
     ensure_data_dirs,
 )
 
@@ -27,7 +28,7 @@ class TestPaths:
         assert DB_PATH.parent == DATABASE_DIR
 
     def test_all_data_dirs_under_data(self):
-        for d in (DATABASE_DIR, IMPORTS_DIR, EXPORTS_DIR, BACKUPS_DIR, LOGS_DIR):
+        for d in (DATABASE_DIR, IMPORTS_DIR, EXPORTS_DIR, BACKUPS_DIR, LOGS_DIR, TEMPLATES_DIR):
             assert "data" in str(d)
 
 
@@ -43,6 +44,7 @@ class TestEnsureDataDirs:
         monkeypatch.setattr(paths_module, "EXPORTS_DIR", new_data / "exports")
         monkeypatch.setattr(paths_module, "BACKUPS_DIR", new_data / "backups")
         monkeypatch.setattr(paths_module, "LOGS_DIR", new_data / "logs")
+        monkeypatch.setattr(paths_module, "TEMPLATES_DIR", new_data / "templates")
 
         paths_module.ensure_data_dirs()
 
@@ -52,5 +54,6 @@ class TestEnsureDataDirs:
             new_data / "exports",
             new_data / "backups",
             new_data / "logs",
+            new_data / "templates",
         ):
             assert d.is_dir(), f"Directory not created: {d}"

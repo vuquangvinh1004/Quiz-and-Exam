@@ -45,11 +45,19 @@ def bank(session, svc) -> QuestionBank:
     return svc.create_bank(session, "Test Bank")
 
 
-def _mc_data(bank_id: int, content: str = "Which?") -> QuestionEditData:
+def _mc_data(
+    bank_id: int,
+    content: str = "Which?",
+    *,
+    difficulty: str = "easy",
+    learning_outcome_code: str = "",
+) -> QuestionEditData:
     return QuestionEditData(
         bank_id=bank_id,
         question_type=QuestionType.MULTIPLE_CHOICE,
         content=content,
+        difficulty=difficulty,
+        learning_outcome_code=learning_outcome_code,
         score=1.0,
         options=[
             ("A", "Option A", True),
@@ -179,6 +187,85 @@ class TestBankCRUD:
         found = next((s for s in stats if s.bank_id == b.id), None)
         assert found.question_count == 0
 
+    def test_get_bank_overview_rows_include_context_metadata(self, session, svc):
+        bank = svc.create_bank(
+            session,
+            "Overview Bank",
+            assessment_type="Thường xuyên",
+            course_learning_outcomes=[
+                {"code": "CLO_1", "description": "Mô tả 1"},
+                {"code": "CLO_2", "description": "Mô tả 2"},
+            ],
+        )
+        svc.create_question(session, _mc_data(bank.id))
+
+        rows = svc.get_bank_overview_rows(session)
+        found = next((row for row in rows if row.bank_id == bank.id), None)
+
+        assert found is not None
+        assert found.assessment_type == "Thường xuyên"
+        assert found.question_count == 1
+        assert found.course_learning_outcomes == [
+            {"code": "CLO_1", "description": "Mô tả 1"},
+            {"code": "CLO_2", "description": "Mô tả 2"},
+        ]
+
+    def test_create_bank_with_assessment_type_and_clos(self, session, svc):
+        bank = svc.create_bank(
+            session,
+            "Metadata Bank",
+            subject="Quản trị chuỗi cung ứng",
+            course_code="SCM101",
+            assessment_type="Định kỳ",
+            course_learning_outcomes=[
+                {"code": "CLO_1", "description": "Mô tả 1"},
+                {"code": "CLO_2", "description": "Mô tả 2"},
+            ],
+        )
+
+        refreshed = session.get(QuestionBank, bank.id)
+        assert refreshed is not None
+        assert refreshed.subject == "Quản trị chuỗi cung ứng"
+        assert refreshed.assessment_type == "Định kỳ"
+        assert refreshed.get_course_learning_outcomes() == [
+            {"code": "CLO_1", "description": "Mô tả 1"},
+            {"code": "CLO_2", "description": "Mô tả 2"},
+        ]
+
+    def test_update_bank_preserves_legacy_exam_title_and_updates_new_metadata(self, session, svc):
+        bank = svc.create_bank(session, "Legacy Bank", exam_title="Giữa kỳ cũ")
+
+        svc.update_bank(
+            session,
+            bank.id,
+            "Legacy Bank",
+            exam_title="Giữa kỳ cũ",
+            assessment_type="Tổng kết",
+            course_learning_outcomes=[
+                {"code": "CLO_3", "description": "Mô tả CLO 3"},
+            ],
+        )
+
+        refreshed = session.get(QuestionBank, bank.id)
+        assert refreshed is not None
+        assert refreshed.exam_title == "Giữa kỳ cũ"
+        assert refreshed.assessment_type == "Tổng kết"
+        assert refreshed.get_course_learning_outcomes() == [
+            {"code": "CLO_3", "description": "Mô tả CLO 3"},
+        ]
+
+    def test_create_bank_rejects_invalid_assessment_type(self, session, svc):
+        with pytest.raises(ValueError, match="Loại đánh giá"):
+            svc.create_bank(session, "Invalid Assessment", assessment_type="Giữa kỳ")
+
+    def test_create_bank_rejects_partial_clo_row(self, session, svc):
+        with pytest.raises(ValueError, match="Mã CLO và Mô tả CLO"):
+            svc.create_bank(
+                session,
+                "Invalid CLO",
+                course_learning_outcomes=[{"code": "CLO_1", "description": ""}],
+            )
+
 
 class TestDashboardStatsAPI:
     def test_get_question_type_breakdown(self, session, svc, bank):
@@ -263,12 +350,54 @@ class TestDashboardStatsAPI:
 
         assert len(rows) == 1
         assert rows[0].question_id == q.id
+        assert rows[0].learning_outcome_code == ""
         assert rows[0].used_count == 1
         assert rows[0].correct_count == 1
         assert summary.total_questions == 1
         assert summary.active_questions == 1
         assert summary.total_uses == 1
         assert summary.total_correct == 1
+        assert summary.difficulty_breakdown["Nhớ"] == 1
+        assert summary.learning_outcome_count == 0
+
+    def test_usage_summary_counts_clo_and_normalizes_levels(self, session, svc, bank):
+        bank = svc.create_bank(
+            session,
+            "CLO Bank",
+            course_learning_outcomes=[
+                {"code": "CLO_1", "description": "Mô tả 1"},
+                {"code": "CLO_2", "description": "Mô tả 2"},
+            ],
+        )
+        svc.create_question(
+            session,
+            _mc_data(
+                bank.id,
+                content="usage clo",
+                difficulty="medium",
+                learning_outcome_code="CLO_1",
+            ),
+        )
+        svc.create_question(
+            session,
+            QuestionEditData(
+                bank_id=bank.id,
+                question_type=QuestionType.SHORT_ANSWER,
+                content="SA usage",
+                difficulty="Phân tích",
+                learning_outcome_code="CLO_2",
+                score=1.0,
+                accepted_answers=["x"],
+            ),
+        )
+
+        rows = svc.get_question_usage_rows(session, bank.id)
+        summary = svc.build_usage_summary(rows)
+
+        assert summary.learning_outcome_count == 2
+        assert summary.learning_outcome_top == [("CLO_1", 1), ("CLO_2", 1)]
+        assert summary.difficulty_breakdown["Hiểu"] == 1
+        assert summary.difficulty_breakdown["Phân tích"] == 1
 
 
 # ──────────────────────────────────────────────
@@ -311,6 +440,21 @@ class TestQuestionCreate:
         assert q.question_type == "SA"
         answers = json.loads(q.accepted_answers)
         assert "4" in answers
+
+    def test_create_question_with_learning_outcome_code(self, session, svc):
+        bank = svc.create_bank(
+            session,
+            "CLO Bank",
+            course_learning_outcomes=[
+                {"code": "CLO_1", "description": "Mô tả 1"},
+            ],
+        )
+        data = _mc_data(bank.id)
+        data.learning_outcome_code = "CLO_1"
+
+        q = svc.create_question(session, data)
+
+        assert q.learning_outcome_code == "CLO_1"
 
     def test_get_question_count(self, session, svc, bank):
         svc.create_question(session, _mc_data(bank.id))
@@ -359,6 +503,12 @@ class TestQuestionValidation:
         data = _mc_data(bank.id)
         data.score = 0
         with pytest.raises(ValueError, match="dương"):
+            svc.create_question(session, data)
+
+    def test_question_learning_outcome_must_belong_to_bank(self, session, svc, bank):
+        data = _mc_data(bank.id)
+        data.learning_outcome_code = "CLO_999"
+        with pytest.raises(ValueError, match="Chuẩn đầu ra"):
             svc.create_question(session, data)
 
     def test_negative_score_raises(self, session, svc, bank):
@@ -412,6 +562,24 @@ class TestQuestionUpdate:
         new_data = _sa_data(bank.id)
         svc.update_question(session, q.id, new_data)
         assert session.get(Question, q.id).question_type == "SA"
+
+    def test_update_question_learning_outcome_code(self, session, svc):
+        bank = svc.create_bank(
+            session,
+            "Update CLO",
+            course_learning_outcomes=[
+                {"code": "CLO_1", "description": "Mô tả 1"},
+                {"code": "CLO_2", "description": "Mô tả 2"},
+            ],
+        )
+        q = svc.create_question(session, _mc_data(bank.id))
+        session.flush()
+
+        data = _mc_data(bank.id, content="Updated content?")
+        data.learning_outcome_code = "CLO_2"
+        svc.update_question(session, q.id, data)
+
+        assert session.get(Question, q.id).learning_outcome_code == "CLO_2"
 
 
 class TestQuestionDelete:
@@ -526,6 +694,17 @@ class TestQuestionSearch:
         assert len(qs) == 1
         assert qs[0].id == self.q2.id
 
+    def test_search_by_learning_outcome_code(self):
+        bank = self.svc.get_bank_by_id(self.session, self.bank.id)
+        bank.set_course_learning_outcomes([{"code": "CLO_1", "description": "Mô tả 1"}])
+        self.q1.learning_outcome_code = "CLO_1"
+        self.session.flush()
+
+        qs = self.svc.list_questions(self.session, bank_id=self.bank.id, search="CLO_1")
+
+        assert len(qs) == 1
+        assert qs[0].id == self.q1.id
+
     def test_filter_by_type_mc(self):
         qs = self.svc.list_questions(self.session, bank_id=self.bank.id, question_type="MC")
         assert all(q.question_type == "MC" for q in qs)
@@ -537,7 +716,7 @@ class TestQuestionSearch:
         assert qs[0].id == self.q3.id
 
     def test_filter_by_difficulty(self):
-        qs = self.svc.list_questions(self.session, bank_id=self.bank.id, difficulty="easy")
+        qs = self.svc.list_questions(self.session, bank_id=self.bank.id, difficulty="Nhớ")
         assert len(qs) == 1
         assert qs[0].id == self.q1.id
 

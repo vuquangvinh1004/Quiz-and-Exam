@@ -310,7 +310,7 @@ class TestRowValidation:
         assert result.has_errors
 
     def test_unknown_question_type_is_error(self, parser, tmp_path):
-        p = _write_csv(tmp_path, [_base_mc_row(question_type="essay")])
+        p = _write_csv(tmp_path, [_base_mc_row(question_type="unknown_type")])
         result = parser.parse_file(p)
         assert result.has_errors
 
@@ -727,3 +727,66 @@ class TestParseResultProperties:
         ]
         assert result.error_count == 2
         assert result.warning_count == 1
+
+
+# ===========================================================================
+# 17. Large-file guardrails
+# ===========================================================================
+
+class TestLargeFileGuardrails:
+
+    def test_soft_row_limit_adds_warning(self, tmp_path):
+        parser = QuestionFileParser(soft_row_limit=2, hard_row_limit=10)
+        rows = [_base_mc_row(question_code=f"MC{i:03d}") for i in range(3)]
+        p = _write_csv(tmp_path, rows)
+
+        result = parser.parse_file(p)
+
+        assert not result.has_errors
+        assert any(
+            i.severity == "WARNING" and "File lớn" in i.message
+            for i in result.issues
+        )
+
+    def test_hard_row_limit_blocks_preview(self, tmp_path):
+        parser = QuestionFileParser(soft_row_limit=2, hard_row_limit=3)
+        rows = [_base_mc_row(question_code=f"MC{i:03d}") for i in range(4)]
+        p = _write_csv(tmp_path, rows)
+
+        result = parser.parse_file(p)
+
+        assert result.has_errors
+        assert any(
+            i.severity == "ERROR" and "Vượt ngưỡng an toàn import" in i.message
+            for i in result.issues
+        )
+
+    def test_hard_file_size_limit_blocks_preview(self, tmp_path):
+        parser = QuestionFileParser(
+            soft_file_size_bytes=16,
+            hard_file_size_bytes=32,
+        )
+        p = _write_csv(tmp_path, [_base_mc_row()])
+
+        result = parser.parse_file(p)
+
+        assert result.has_errors
+        assert any(
+            i.severity == "ERROR" and "File quá lớn" in i.message
+            for i in result.issues
+        )
+
+    def test_soft_file_size_limit_adds_warning(self, tmp_path):
+        parser = QuestionFileParser(
+            soft_file_size_bytes=16,
+            hard_file_size_bytes=100_000,
+        )
+        p = _write_csv(tmp_path, [_base_mc_row()])
+
+        result = parser.parse_file(p)
+
+        assert not result.has_errors
+        assert any(
+            i.severity == "WARNING" and "File khá lớn" in i.message
+            for i in result.issues
+        )

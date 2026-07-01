@@ -19,22 +19,14 @@ from modules.quiz_builder.quota_allocator import (
 from modules.quiz_exporter.word_renderer import (
     ExportQuestionSnapshot,
     WordRenderer,
-    build_output_path,
 )
+from modules.quiz_exporter.package_builder import create_batch_export_package
 
 
 def run_batch_generation(view) -> None:
     bank_id = view._current_bank_id()
     if bank_id is None:
         QMessageBox.warning(view, "Thiếu thông tin", "Vui lòng chọn ngân hàng câu hỏi.")
-        return
-
-    if not view._selected_types():
-        QMessageBox.warning(view, "Thiếu thông tin", "Chọn ít nhất một loại câu hỏi.")
-        return
-
-    if not view._selected_difficulties():
-        QMessageBox.warning(view, "Thiếu thông tin", "Chọn ít nhất một mức độ khó.")
         return
 
     title_error = view._export_panel.validate_required_fields()
@@ -47,7 +39,7 @@ def run_batch_generation(view) -> None:
         total_questions=view._count_spin.value(),
         chapter_quota=view._quota_dict(view._chapter_spins),
         type_quota=view._quota_dict(view._type_spins),
-        difficulty_quota=view._quota_dict(view._difficulty_spins),
+        clo_quota=view._quota_dict(view._clo_spins),
     )
 
     inv = build_inventory(questions)
@@ -70,6 +62,13 @@ def run_batch_generation(view) -> None:
     no_repeat_between_exams = view._cb_no_repeat_between_exams.isChecked()
     generated_paths: list[Path] = []
     used_across_exams: set[int] = set()
+    base_meta = view._export_panel.build_meta(duration_minutes=view._duration_spin.value())
+    package = create_batch_export_package(
+        root_dir=Path(output_dir),
+        exam_title=base_meta.exam_title,
+        subject=base_meta.subject,
+        course_code=base_meta.course_code,
+    )
 
     for exam_index in range(1, exam_count + 1):
         try:
@@ -125,10 +124,7 @@ def run_batch_generation(view) -> None:
             )
             break
 
-        output_path = build_output_path(
-            f"{meta.exam_title}_De_{exam_index:02d}",
-            Path(output_dir),
-        )
+        output_path = package.build_exam_path(meta.exam_title, exam_index)
         try:
             doc.save(output_path)
         except (OSError, PermissionError, FileNotFoundError) as exc:
@@ -146,7 +142,7 @@ def run_batch_generation(view) -> None:
     QMessageBox.information(
         view,
         "Hoàn tất",
-        f"Đã tạo {len(generated_paths)} đề tại:\n{output_dir}",
+        f"Đã tạo {len(generated_paths)} đề tại:\n{package.package_dir}",
     )
     if os.name == "nt":
-        os.startfile(output_dir)
+        os.startfile(str(package.package_dir))

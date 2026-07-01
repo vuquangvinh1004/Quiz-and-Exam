@@ -1,4 +1,4 @@
-"""Result History View – list and detail of quiz attempt records."""
+"""Màn lịch sử làm bài - danh sách và chi tiết các lần làm bài."""
 from __future__ import annotations
 
 import os
@@ -21,15 +21,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.database.session import get_session
-from core.domain.services.history_service import HistoryService
 from modules.analytics.history_loader import load_attempts_and_pending_count
+from ui.facades.history_facade import HistoryFacade
 from ui.utils.error_handler import show_warning_error
 
 _MODE_LABELS = {
     "EXAM": "Kiểm tra",
     "PRACTICE": "Luyện tập",
-    "STUDY": "Học tập",
+    "STUDY": "Ôn tập",
 }
 _STATUS_LABELS = {
     "IN_PROGRESS": "Đang làm",
@@ -61,6 +60,7 @@ class ResultHistoryView(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._attempts: list[dict] = []
+        self._history_facade = HistoryFacade()
         self._refresh_thread: QThread | None = None
         self._refresh_worker: _HistoryLoadWorker | None = None
         self.destroyed.connect(self._stop_refresh_thread)
@@ -80,7 +80,7 @@ class ResultHistoryView(QWidget):
         filter_row.setSpacing(8)
 
         self._search_edit = QLineEdit()
-        self._search_edit.setPlaceholderText("Tìm theo tên bài kiểm tra…")
+        self._search_edit.setPlaceholderText("Tìm theo tên bài làm…")
         self._search_edit.setClearButtonEnabled(True)
         self._search_edit.textChanged.connect(self._apply_filter)
 
@@ -110,7 +110,7 @@ class ResultHistoryView(QWidget):
         # Attempt table
         self._table = QTableWidget(0, 6)
         self._table.setHorizontalHeaderLabels(
-            ["#", "Tên bài kiểm tra", "Chế độ", "Trạng thái", "Điểm", "Ngày làm"]
+            ["#", "Tên bài làm", "Chế độ", "Trạng thái", "Điểm", "Ngày làm"]
         )
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -346,8 +346,7 @@ class ResultHistoryView(QWidget):
         if attempt_id is None:
             return
         try:
-            with get_session() as session:
-                data = HistoryService.get_attempt_detail(session, attempt_id)
+            data = self._history_facade.get_attempt_detail(attempt_id)
         except Exception as exc:
             show_warning_error(self, "Lỗi", "Không thể tải chi tiết.", exc=exc)
             return
@@ -373,8 +372,7 @@ class ResultHistoryView(QWidget):
         if confirm != QMessageBox.StandardButton.Yes:
             return
         try:
-            with get_session() as session:
-                HistoryService.delete_attempt(session, attempt_id)
+            self._history_facade.delete_attempt(attempt_id)
         except Exception as exc:
             show_warning_error(self, "Lỗi", "Không thể xóa bài làm.", exc=exc)
             return
@@ -390,9 +388,9 @@ class ResultHistoryView(QWidget):
 class AttemptDetailDialog(QDialog):
     """Shows attempt detail; presentation varies by mode.
 
-    EXAM     – summary stats only; per-question table NOT shown.
-    PRACTICE – summary totals (correct / wrong / skipped).
-    STUDY    – per-question table with ✓ / ✗ / – per row.
+    Kiểm tra – summary stats only; per-question table NOT shown.
+    Luyện tập – summary totals (correct / wrong / skipped).
+    Ôn tập   – per-question table with ✓ / ✗ / – per row.
 
     ARCHITECTURE §5.5 compliance.
     """
@@ -400,7 +398,7 @@ class AttemptDetailDialog(QDialog):
     def __init__(self, data: dict, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._data = data
-        self.setWindowTitle(f"Chi tiết: {data['quiz_title']}")
+        self.setWindowTitle(f"Chi tiết bài làm: {data['quiz_title']}")
         self.setMinimumWidth(580)
         self.setMinimumHeight(300)
         self._build_ui()
@@ -429,7 +427,7 @@ class AttemptDetailDialog(QDialog):
             lbl.setWordWrap(True)
             layout.addWidget(lbl)
 
-        _row(f"<b>Bài kiểm tra:</b> {self._data['quiz_title']}")
+        _row(f"<b>Bài làm:</b> {self._data['quiz_title']}")
         _row(
             f"<b>Chế độ:</b> {mode_label}&nbsp;&nbsp;&nbsp;"
             f"<b>Trạng thái:</b> {status_label}"
@@ -447,7 +445,7 @@ class AttemptDetailDialog(QDialog):
                 f"<b>– Bỏ qua:</b> {self._data['skipped_count']}"
             )
 
-        # Per-question table only for STUDY
+        # Per-question table only for Ôn tập
         if mode == "STUDY":
             layout.addWidget(self._build_answers_table())
         elif mode == "EXAM":

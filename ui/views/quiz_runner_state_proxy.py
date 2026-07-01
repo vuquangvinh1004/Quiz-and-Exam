@@ -103,3 +103,35 @@ class QuizRunnerStateProxyMixin:
     @_started_at.setter
     def _started_at(self, value: datetime | None) -> None:
         self._state.started_at = value
+
+    @property
+    def _remaining_seconds(self) -> int | None:
+        return self._state.remaining_seconds
+
+    @_remaining_seconds.setter
+    def _remaining_seconds(self, value: int | None) -> None:
+        self._state.remaining_seconds = value
+
+    @property
+    def _resumed_from_autosave(self) -> bool:
+        return self._state.resumed_from_autosave
+
+    @_resumed_from_autosave.setter
+    def _resumed_from_autosave(self, value: bool) -> None:
+        self._state.resumed_from_autosave = value
+
+    @property
+    def _finalizing(self) -> bool:
+        return self._state.finalizing
+
+    @_finalizing.setter
+    def _finalizing(self, value: bool) -> None:
+        self._state.finalizing = value
+
+    @property
+    def _retry_submit_only(self) -> bool:
+        return self._state.retry_submit_only
+
+    @_retry_submit_only.setter
+    def _retry_submit_only(self, value: bool) -> None:
+        self._state.retry_submit_only = value

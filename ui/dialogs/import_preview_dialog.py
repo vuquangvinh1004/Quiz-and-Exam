@@ -1,10 +1,10 @@
-"""Import Preview Dialog.
+"""Hộp thoại xem trước nhập dữ liệu.
 
-Shows parse result (summary + issue table) and allows the user to commit
-a valid import into the selected question bank.
+Hiển thị kết quả phân tích (tóm tắt + bảng vấn đề) và cho phép người dùng
+ghi nhận một lần nhập hợp lệ vào ngân hàng câu hỏi đã chọn.
 
 Rules enforced here (QUIZ_APP_IMPORT_FORMAT.md §12):
-  - Import button enabled ONLY when has_errors is False.
+  - Nút nhập chỉ được bật khi has_errors là False.
   - Cancel is always available.
   - No silent error swallowing – every issue shown with line number.
 """
@@ -34,7 +34,7 @@ from ui.facades.import_facade import ImportFacade
 
 
 class ImportPreviewDialog(QDialog):
-    """Preview parse result and optionally commit it to the database."""
+    """Xem trước kết quả phân tích và tùy chọn ghi vào cơ sở dữ liệu."""
 
     _SEVERITY_BG: dict[str, str] = {
         "ERROR": "#c0392b",
@@ -62,7 +62,7 @@ class ImportPreviewDialog(QDialog):
         self._facade = facade
         self._was_imported = False
 
-        self.setWindowTitle("Xem trước Import – " + file_path.name)
+        self.setWindowTitle("Xem trước nhập dữ liệu – " + file_path.name)
         self.setMinimumSize(820, 520)
         self._build_ui()
 
@@ -89,7 +89,7 @@ class ImportPreviewDialog(QDialog):
             layout.addWidget(QLabel("<b>Chi tiết vấn đề phát hiện:</b>"))
             layout.addWidget(self._build_issues_table(), stretch=1)
         else:
-            ok_lbl = QLabel("✓ Không có vấn đề nào – file đã sẵn sàng để import.")
+            ok_lbl = QLabel("✓ Không có vấn đề nào – file đã sẵn sàng để nhập.")
             ok_lbl.setStyleSheet("color: #27ae60; font-weight: bold; font-size: 14px;")
             layout.addWidget(ok_lbl)
 
@@ -121,7 +121,7 @@ class ImportPreviewDialog(QDialog):
         if self._result.has_errors:
             warn_lbl = QLabel(
                 "⚠  File có lỗi nghiêm trọng. Vui lòng sửa file và thử lại; "
-                "nút Import đã bị vô hiệu hóa."
+                "nút nhập đã bị vô hiệu hóa."
             )
             warn_lbl.setStyleSheet(
                 f"color: {self._SEVERITY_BG['ERROR']}; font-weight: bold;"
@@ -166,7 +166,7 @@ class ImportPreviewDialog(QDialog):
     def _build_button_bar(self) -> QDialogButtonBox:
         btn_box = QDialogButtonBox()
 
-        self._import_btn = QPushButton("⬇  Import câu hỏi")
+        self._import_btn = QPushButton("⬇  Nhập câu hỏi")
         self._import_btn.setEnabled(not self._result.has_errors)
         self._import_btn.setDefault(not self._result.has_errors)
         self._import_btn.clicked.connect(self._on_import)
@@ -185,14 +185,14 @@ class ImportPreviewDialog(QDialog):
 
     def _on_import(self) -> None:
         self._import_btn.setEnabled(False)
-        self._import_btn.setText("Đang import...")
+        self._import_btn.setText("Đang nhập...")
 
         try:
             summary = self._facade.commit_preview(self._result, self._bank_id)
             self._was_imported = True
 
             msg = (
-                f"Import thành công!\n\n"
+                f"Nhập dữ liệu thành công!\n\n"
                 f"{summary.inserted} câu hỏi đã được thêm vào ngân hàng."
             )
             if summary.skipped_rows:
@@ -200,23 +200,23 @@ class ImportPreviewDialog(QDialog):
                     f"\n{len(summary.skipped_rows)} dòng bị bỏ qua do trùng "
                     "với dữ liệu đã có trong cơ sở dữ liệu."
                 )
-            QMessageBox.information(self, "Import hoàn tất", msg)
+            QMessageBox.information(self, "Nhập dữ liệu hoàn tất", msg)
             self.accept()
 
         except (ImportError, DatabaseError, QuizAppError) as exc:
             self._import_btn.setEnabled(True)
-            self._import_btn.setText("⬇  Import câu hỏi")
+            self._import_btn.setText("⬇  Nhập câu hỏi")
             QMessageBox.critical(
                 self,
-                "Lỗi Import",
-                f"Import thất bại:\n{map_exception_to_user_message(exc)}",
+                "Lỗi nhập dữ liệu",
+                f"Nhập dữ liệu thất bại:\n{map_exception_to_user_message(exc)}",
             )
 
         except Exception as exc:
             self._import_btn.setEnabled(True)
-            self._import_btn.setText("⬇  Import câu hỏi")
+            self._import_btn.setText("⬇  Nhập câu hỏi")
             QMessageBox.critical(
                 self,
-                "Lỗi Import",
-                f"Import thất bại:\n{map_exception_to_user_message(exc)}",
+                "Lỗi nhập dữ liệu",
+                f"Nhập dữ liệu thất bại:\n{map_exception_to_user_message(exc)}",
             )

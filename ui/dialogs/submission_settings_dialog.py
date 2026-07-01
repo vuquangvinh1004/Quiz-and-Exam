@@ -1,4 +1,4 @@
-"""Dialog for configuring submission settings (SMTP, default email, folder).
+"""Hộp thoại cấu hình nộp bài (SMTP, email mặc định, thư mục).
 
 Accessible from SettingsView and also from within SubmitDialog via a link.
 Persists settings to the app_settings table via SubmissionService.
@@ -36,12 +36,12 @@ logger = get_logger(__name__)
 
 
 class SubmissionSettingsDialog(QDialog):
-    """Configure how and where quiz results are submitted after an EXAM."""
+    """Cấu hình cách và nơi nộp kết quả sau khi hoàn thành bài kiểm tra."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._facade = SubmissionSettingsFacade()
-        self.setWindowTitle("Cài đặt Nộp bài")
+        self.setWindowTitle("Cấu hình nộp bài")
         self.setMinimumWidth(680)
         self.setModal(True)
         self.setWindowFlags(
@@ -76,7 +76,7 @@ class SubmissionSettingsDialog(QDialog):
         tabs = QTabWidget()
         tabs.addTab(self._build_mode_tab(), "Phương thức nộp")
         tabs.addTab(self._build_email_tab(), "Cài đặt Email")
-        tabs.addTab(self._build_folder_tab(), "Cài đặt Thư mục")
+        tabs.addTab(self._build_folder_tab(), "Cài đặt thư mục")
         tabs.addTab(self._build_gsheets_tab(), "Google Sheets")
         layout.addWidget(tabs)
 
@@ -89,7 +89,7 @@ class SubmissionSettingsDialog(QDialog):
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
-        buttons.button(QDialogButtonBox.StandardButton.Save).setText("Lưu cài đặt")
+        buttons.button(QDialogButtonBox.StandardButton.Save).setText("Lưu")
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Hủy")
         buttons.accepted.connect(self._on_save)
         buttons.rejected.connect(self.reject)
@@ -101,20 +101,20 @@ class SubmissionSettingsDialog(QDialog):
         layout.setSpacing(8)
 
         layout.addWidget(QLabel(
-            "Chọn phương thức nộp bài mặc định sau khi hoàn thành bài kiểm tra:"
+            "Chọn phương thức nộp mặc định sau khi hoàn thành bài kiểm tra:"
         ))
 
         self._mode_none = QRadioButton("Không nộp bài (chỉ hiển thị kết quả)")
-        self._mode_email = QRadioButton("Nộp qua Email")
-        self._mode_folder = QRadioButton("Lưu vào Thư mục trên máy tính")
-        self._mode_both = QRadioButton("Cả Email và Thư mục")
+        self._mode_email = QRadioButton("Nộp qua email")
+        self._mode_folder = QRadioButton("Lưu vào thư mục trên máy tính")
+        self._mode_both = QRadioButton("Cả email và thư mục")
 
         for btn in (self._mode_none, self._mode_email, self._mode_folder, self._mode_both):
             layout.addWidget(btn)
 
         note = QLabel(
             '<i style="color: #666;">Lưu ý: Cài đặt này chỉ áp dụng cho chế độ '
-            "<b>Kiểm tra</b>. Luyện tập và Học tập chỉ hiển thị kết quả tổng hợp.</i>"
+            "<b>Kiểm tra</b>. Luyện tập và Ôn tập chỉ hiển thị kết quả tổng hợp.</i>"
         )
         note.setTextFormat(Qt.TextFormat.RichText)
         note.setWordWrap(True)
@@ -138,13 +138,13 @@ class SubmissionSettingsDialog(QDialog):
 
         self._smtp_server_edit = QLineEdit()
         self._smtp_server_edit.setPlaceholderText("smtp.gmail.com")
-        form.addRow("SMTP Server:", self._smtp_server_edit)
+        form.addRow("SMTP server:", self._smtp_server_edit)
 
         self._smtp_port_spin = QSpinBox()
         self._smtp_port_spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
         self._smtp_port_spin.setRange(1, 65535)
         self._smtp_port_spin.setValue(587)
-        form.addRow("SMTP Port:", self._smtp_port_spin)
+        form.addRow("SMTP port:", self._smtp_port_spin)
 
         self._smtp_tls_check = QCheckBox("Dùng STARTTLS (khuyến nghị)")
         apply_checkbox_style(self._smtp_tls_check)
@@ -152,7 +152,7 @@ class SubmissionSettingsDialog(QDialog):
 
         self._smtp_user_edit = QLineEdit()
         self._smtp_user_edit.setPlaceholderText("your.account@gmail.com")
-        form.addRow("Tên đăng nhập:", self._smtp_user_edit)
+        form.addRow("Tên đăng nhập email:", self._smtp_user_edit)
 
         self._smtp_password_edit = QLineEdit()
         self._smtp_password_edit.setEchoMode(QLineEdit.EchoMode.Password)
@@ -161,7 +161,7 @@ class SubmissionSettingsDialog(QDialog):
 
         self._smtp_sender_edit = QLineEdit()
         self._smtp_sender_edit.setPlaceholderText("Tên hiển thị <address@domain.com>")
-        form.addRow("Địa chỉ gửi:", self._smtp_sender_edit)
+        form.addRow("Tên hiển thị người gửi:", self._smtp_sender_edit)
 
         hint = QLabel(
             '<span style="color: #888; font-size: 12px;">'
@@ -173,7 +173,7 @@ class SubmissionSettingsDialog(QDialog):
 
         # Test button
         test_row = QHBoxLayout()
-        self._test_btn = QPushButton("Kiểm tra kết nối SMTP")
+        self._test_btn = QPushButton("Kiểm tra kết nối")
         self._test_btn.clicked.connect(self._test_smtp)
         self._test_result = QLabel("")
         test_row.addWidget(self._test_btn)

@@ -18,6 +18,17 @@ from PySide6.QtWidgets import (
 from ui.styles import apply_checkbox_style
 from ui.widgets.bank_combo import BankCombo
 
+_QUESTION_TYPE_LABELS = {
+    "MC": "Trắc nghiệm 1 đáp án",
+    "MA": "Trắc nghiệm nhiều đáp án",
+    "TF": "Đúng/Sai",
+    "BLANK": "Điền vào chỗ trống",
+    "SA": "Trả lời ngắn",
+    "ES": "Tự luận",
+}
+
+_DIFFICULTY_LEVELS = ("Nhớ", "Hiểu", "Vận dụng", "Phân tích", "Đánh giá", "Sáng tạo")
+
 
 def build_setup_panel(view) -> QWidget:
     panel = QWidget()
@@ -48,7 +59,7 @@ def build_setup_panel(view) -> QWidget:
     view._setup_mode_combo = QComboBox()
     view._setup_mode_combo.addItem("🎯 Kiểm tra", userData="EXAM")
     view._setup_mode_combo.addItem("📝 Luyện tập", userData="PRACTICE")
-    view._setup_mode_combo.addItem("📚 Học tập", userData="STUDY")
+    view._setup_mode_combo.addItem("📚 Ôn tập", userData="STUDY")
     setup_form.addRow("Chế độ *:", view._setup_mode_combo)
 
     view._setup_time_spin = QSpinBox()
@@ -67,12 +78,28 @@ def build_setup_panel(view) -> QWidget:
     setup_form.addRow("Số câu hỏi:", view._setup_count_spin)
 
     types_row = QHBoxLayout()
-    view._setup_cb_mc = QCheckBox("MC")
-    view._setup_cb_ma = QCheckBox("MA")
-    view._setup_cb_blank = QCheckBox("Blank")
-    view._setup_cb_sa = QCheckBox("SA")
-    apply_checkbox_style(view._setup_cb_mc, view._setup_cb_ma, view._setup_cb_blank, view._setup_cb_sa)
-    for cb in (view._setup_cb_mc, view._setup_cb_ma, view._setup_cb_blank, view._setup_cb_sa):
+    view._setup_cb_mc = QCheckBox(_QUESTION_TYPE_LABELS["MC"])
+    view._setup_cb_ma = QCheckBox(_QUESTION_TYPE_LABELS["MA"])
+    view._setup_cb_tf = QCheckBox(_QUESTION_TYPE_LABELS["TF"])
+    view._setup_cb_blank = QCheckBox(_QUESTION_TYPE_LABELS["BLANK"])
+    view._setup_cb_sa = QCheckBox(_QUESTION_TYPE_LABELS["SA"])
+    view._setup_cb_es = QCheckBox(_QUESTION_TYPE_LABELS["ES"])
+    apply_checkbox_style(
+        view._setup_cb_mc,
+        view._setup_cb_ma,
+        view._setup_cb_tf,
+        view._setup_cb_blank,
+        view._setup_cb_sa,
+        view._setup_cb_es,
+    )
+    for cb in (
+        view._setup_cb_mc,
+        view._setup_cb_ma,
+        view._setup_cb_tf,
+        view._setup_cb_blank,
+        view._setup_cb_sa,
+        view._setup_cb_es,
+    ):
         cb.setChecked(True)
         types_row.addWidget(cb)
     types_row.addStretch()
@@ -81,22 +108,23 @@ def build_setup_panel(view) -> QWidget:
     setup_form.addRow("Loại:", types_widget)
 
     diff_row = QHBoxLayout()
-    view._setup_cb_easy = QCheckBox("Easy")
-    view._setup_cb_medium = QCheckBox("Medium")
-    view._setup_cb_hard = QCheckBox("Hard")
-    apply_checkbox_style(view._setup_cb_easy, view._setup_cb_medium, view._setup_cb_hard)
-    for cb in (view._setup_cb_easy, view._setup_cb_medium, view._setup_cb_hard):
+    view._setup_difficulty_cbs = []
+    for level in _DIFFICULTY_LEVELS:
+        cb = QCheckBox(level)
+        view._setup_difficulty_cbs.append(cb)
+    apply_checkbox_style(*view._setup_difficulty_cbs)
+    for cb in view._setup_difficulty_cbs:
         cb.setChecked(True)
         diff_row.addWidget(cb)
     diff_row.addStretch()
     diff_widget = QWidget()
     diff_widget.setLayout(diff_row)
-    setup_form.addRow("Độ khó:", diff_widget)
+    setup_form.addRow("Mức độ:", diff_widget)
 
     misc_row = QHBoxLayout()
     view._setup_shuffle_q = QCheckBox("Trộn thứ tự câu")
     view._setup_shuffle_q.setChecked(True)
-    view._setup_shuffle_opts = QCheckBox("Trộn đáp án (MC/MA)")
+    view._setup_shuffle_opts = QCheckBox("Trộn đáp án (MC/MA/TF)")
     view._setup_shuffle_opts.setChecked(True)
     apply_checkbox_style(view._setup_shuffle_q, view._setup_shuffle_opts)
     misc_row.addWidget(view._setup_shuffle_q)
@@ -106,15 +134,15 @@ def build_setup_panel(view) -> QWidget:
     misc_widget.setLayout(misc_row)
     setup_form.addRow("Tùy chọn:", misc_widget)
 
-    view._setup_pool_btn = QPushButton("Chọn pool câu hỏi")
-    view._setup_pool_summary = QLabel("Đang dùng: tất cả câu hỏi phù hợp bộ lọc")
+    view._setup_pool_btn = QPushButton("Chọn bộ câu hỏi")
+    view._setup_pool_summary = QLabel("Đang dùng: tất cả câu hỏi trong bộ chọn")
     pool_row = QHBoxLayout()
     pool_row.addWidget(view._setup_pool_btn)
     pool_row.addWidget(view._setup_pool_summary)
     pool_row.addStretch()
     pool_widget = QWidget()
     pool_widget.setLayout(pool_row)
-    setup_form.addRow("Pool câu hỏi:", pool_widget)
+    setup_form.addRow("Bộ câu hỏi:", pool_widget)
 
     view._setup_available_lbl = QLabel("Sẵn có: 0 câu")
     setup_form.addRow("Khả dụng:", view._setup_available_lbl)
@@ -153,6 +181,14 @@ def build_running_panel(view) -> QWidget:
     view._header_title = QLabel("Bài kiểm tra")
     view._header_title.setStyleSheet("color: white; font-size: 15px; font-weight: bold;")
     header_hl.addWidget(view._header_title, stretch=1)
+
+    view._resume_badge = QLabel("Khôi phục từ autosave")
+    view._resume_badge.setStyleSheet(
+        "background: #f39c12; color: #1f2d3d; font-size: 12px; "
+        "font-weight: bold; padding: 4px 8px; border-radius: 10px;"
+    )
+    view._resume_badge.hide()
+    header_hl.addWidget(view._resume_badge)
 
     view._timer_label = QLabel("⏱ --:--")
     view._timer_label.setStyleSheet("color: #f1c40f; font-size: 15px; font-weight: bold;")

@@ -61,7 +61,7 @@ class QuizQuestionSnapshot:
     quiz_question_id: int
     order: int
     content: str
-    type: str                               # QuizType value: MC | MA | BLANK | SA
+    type: str                               # QuizType value: MC | MA | BLANK | TF | SA | ES
     hint: str = ""
     explanation: str = ""
     point_value: float = 1.0
@@ -114,6 +114,19 @@ class QuizInfoDTO:
     total: int
 
 
+@dataclass
+class AttemptResumeDTO:
+    """Persisted in-progress attempt data needed to resume a session."""
+
+    attempt_id: int
+    quiz_id: int
+    started_at: datetime | None
+    remaining_seconds: int | None
+    submitter_name: str = ""
+    submitter_id: str = ""
+    answers: dict[int, dict] = field(default_factory=dict)
+
+
 # ---------------------------------------------------------------------------
 # Service
 # ---------------------------------------------------------------------------
@@ -164,9 +177,9 @@ class QuizService:
 
         for order, snap in enumerate(typed_snapshots, start=1):
             qtype = snap.type
-            # For BLANK/SA encode accepted_answers together with matching config
+            # For BLANK/SA/ES encode accepted_answers together with matching config
             # so the grader can work from the snapshot alone (no live Question needed).
-            if qtype in ("BLANK", "SA") and snap.accepted_answers:
+            if qtype in ("BLANK", "SA", "ES") and snap.accepted_answers:
                 sa_json = json.dumps(
                     {
                         "answers": snap.accepted_answers,
@@ -231,10 +244,19 @@ class QuizService:
     # Attempt management
     # -----------------------------------------------------------------------
 
-    def create_attempt(self, session: Session, quiz_id: int) -> Attempt:
+    def create_attempt(
+        self,
+        session: Session,
+        quiz_id: int,
+        *,
+        submitter_name: str = "",
+        submitter_id: str = "",
+        remaining_seconds: int | None = None,
+    ) -> Attempt:
         """Create an attempt and pre-populate AttemptAnswer rows."""
         quiz = self.get_quiz(session, quiz_id)
         max_score = sum(qq.snapshot_point_value or 1.0 for qq in quiz.quiz_questions)
+        extra_data = self._build_attempt_extra_data(submitter_name, submitter_id)
 
         attempt = Attempt(
             quiz_id=quiz_id,
@@ -246,6 +268,8 @@ class QuizService:
             incorrect_count=0,
             skipped_count=0,
             score=0.0,
+            remaining_seconds=remaining_seconds,
+            extra_data=extra_data,
         )
         session.add(attempt)
         session.flush()
@@ -299,6 +323,66 @@ class QuizService:
             if payload:
                 self.save_answer(session, attempt_id, qq_id, payload)
 
+    def autosave_progress(
+        self,
+        session: Session,
+        attempt_id: int,
+        answers: dict[int, dict],
+        remaining_seconds: int | None,
+    ) -> None:
+        """Persist in-progress answers together with timer state."""
+        attempt = session.get(Attempt, attempt_id)
+        if attempt is None:
+            raise ValueError(f"Không tìm thấy attempt id={attempt_id}.")
+        attempt.remaining_seconds = remaining_seconds
+        self.autosave_answers(session, attempt_id, answers)
+
+    def get_resumable_attempt(
+        self,
+        session: Session,
+        quiz_id: int,
+    ) -> AttemptResumeDTO | None:
+        """Return the latest in-progress attempt for one quiz, if any."""
+        attempt = (
+            session.query(Attempt)
+            .filter_by(quiz_id=quiz_id, status=AttemptStatus.IN_PROGRESS.value)
+            .order_by(Attempt.started_at.desc(), Attempt.id.desc())
+            .first()
+        )
+        if attempt is None:
+            return None
+
+        answers: dict[int, dict] = {}
+        for row in attempt.answers:
+            if not row.answer_payload:
+                continue
+            try:
+                payload = json.loads(row.answer_payload)
+            except json.JSONDecodeError:
+                continue
+            if payload:
+                answers[row.quiz_question_id] = payload
+
+        extra_data = self._parse_attempt_extra_data(attempt.extra_data)
+        return AttemptResumeDTO(
+            attempt_id=attempt.id,
+            quiz_id=attempt.quiz_id,
+            started_at=self._normalize_started_at(attempt.started_at),
+            remaining_seconds=attempt.remaining_seconds,
+            submitter_name=extra_data.get("submitter_name", ""),
+            submitter_id=extra_data.get("submitter_id", ""),
+            answers=answers,
+        )
+
+    def delete_attempt(self, session: Session, attempt_id: int) -> bool:
+        """Delete an attempt and its answers. Returns False if missing."""
+        attempt = session.get(Attempt, attempt_id)
+        if attempt is None:
+            return False
+        session.delete(attempt)
+        session.flush()
+        return True
+
     def finalize_attempt(
         self,
         session: Session,
@@ -346,6 +430,7 @@ class QuizService:
         attempt.status = status
         attempt.submitted_at = datetime.now(timezone.utc)
         attempt.duration_seconds = duration_seconds
+        attempt.remaining_seconds = 0
         attempt.answered_count = answered
         attempt.correct_count = correct
         attempt.incorrect_count = incorrect
@@ -414,3 +499,33 @@ class QuizService:
                 )
         if question_count < 1:
             raise ValueError("Bài kiểm tra cần ít nhất 1 câu hỏi.")
+
+    @staticmethod
+    def _build_attempt_extra_data(submitter_name: str, submitter_id: str) -> str | None:
+        if not submitter_name and not submitter_id:
+            return None
+        return json.dumps(
+            {
+                "submitter_name": submitter_name,
+                "submitter_id": submitter_id,
+            },
+            ensure_ascii=False,
+        )
+
+    @staticmethod
+    def _parse_attempt_extra_data(extra_data: str | None) -> dict:
+        if not extra_data:
+            return {}
+        try:
+            parsed = json.loads(extra_data)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
+    @staticmethod
+    def _normalize_started_at(value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)

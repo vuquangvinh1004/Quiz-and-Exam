@@ -72,6 +72,14 @@ def validate_correct_answers_for_type(
             if tok not in [lbl.upper() for lbl in option_labels_present]:
                 errors.append(f"Correct answer '{tok}' references a non-existent option.")
 
-    # BLANK and SHORT_ANSWER: just need at least one non-empty value; already confirmed above.
+    # BLANK / SHORT_ANSWER / ESSAY: just need at least one non-empty value; already confirmed above.
+    elif question_type == QuestionType.TRUE_FALSE:
+        if len(tokens) != 1:
+            errors.append(
+                f"true_false requires exactly 1 correct answer; got {len(tokens)}."
+            )
+        for tok in tokens:
+            if tok not in [lbl.upper() for lbl in option_labels_present]:
+                errors.append(f"Correct answer '{tok}' references a non-existent option.")
 
     return errors

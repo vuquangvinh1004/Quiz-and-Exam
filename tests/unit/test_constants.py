@@ -21,15 +21,22 @@ from core.utils.constants import (
 
 
 class TestQuestionType:
-    def test_all_four_types_present(self):
+    def test_all_types_present(self):
         values = {qt.value for qt in QuestionType}
-        assert values == {"MC", "MA", "BLANK", "SA"}
+        assert values == {"MC", "MA", "BLANK", "TF", "SA", "ES"}
 
     def test_import_map_covers_all_types(self):
         assert set(QUESTION_TYPE_IMPORT_MAP.values()) == set(QuestionType)
 
     def test_import_map_keys_are_long_form(self):
-        expected_keys = {"multiple_choice", "multiple_answer", "blank", "short_answer"}
+        expected_keys = {
+            "multiple_choice",
+            "multiple_answer",
+            "blank",
+            "true_false",
+            "short_answer",
+            "essay",
+        }
         assert set(QUESTION_TYPE_IMPORT_MAP.keys()) == expected_keys
 
     def test_is_str_enum(self):

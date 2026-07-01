@@ -26,6 +26,10 @@ def test_reset_runtime_keeps_pending_quiz_info() -> None:
         submitter_name="A",
         submitter_id="B",
         started_at=datetime.now(timezone.utc),
+        remaining_seconds=500,
+        resumed_from_autosave=True,
+        finalizing=True,
+        retry_submit_only=True,
     )
 
     state.reset_runtime()
@@ -37,6 +41,10 @@ def test_reset_runtime_keeps_pending_quiz_info() -> None:
     assert state.answers == {}
     assert state.confirmed == set()
     assert state.started_at is None
+    assert state.remaining_seconds is None
+    assert state.resumed_from_autosave is False
+    assert state.finalizing is False
+    assert state.retry_submit_only is False
 
 
 def test_reset_all_clears_everything() -> None:

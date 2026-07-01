@@ -28,6 +28,10 @@ class QuizRunnerState:
     submitter_name: str = ""
     submitter_id: str = ""
     started_at: datetime | None = None
+    remaining_seconds: int | None = None
+    resumed_from_autosave: bool = False
+    finalizing: bool = False
+    retry_submit_only: bool = False
 
     def reset_runtime(self) -> None:
         """Reset in-progress attempt data while keeping pending quiz info."""
@@ -41,6 +45,10 @@ class QuizRunnerState:
         self.submitter_name = ""
         self.submitter_id = ""
         self.started_at = None
+        self.remaining_seconds = None
+        self.resumed_from_autosave = False
+        self.finalizing = False
+        self.retry_submit_only = False
 
     def reset_all(self) -> None:
         """Reset both pending setup and runtime state."""

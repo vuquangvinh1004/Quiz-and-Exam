@@ -11,6 +11,7 @@ def _mc_question() -> Question:
         question_type="MC",
         content="Sample MC",
         difficulty="easy",
+        learning_outcome_code="CLO_1",
         category="Chuong 1",
         is_active=True,
     )
@@ -42,3 +43,14 @@ def test_build_snapshots_keeps_original_keys_without_shuffle() -> None:
     options = snapshots[0]["options"]
 
     assert [o["key"] for o in options] == ["A", "B", "C", "D"]
+
+
+def test_build_snapshots_carries_statistics_metadata() -> None:
+    selector = QuestionSelector()
+    q = _mc_question()
+
+    snapshot = selector.build_snapshots([q], shuffle_options=False)[0]
+
+    assert snapshot["difficulty"] == "easy"
+    assert snapshot["learning_outcome_code"] == "CLO_1"
+    assert snapshot["category"] == "Chuong 1"

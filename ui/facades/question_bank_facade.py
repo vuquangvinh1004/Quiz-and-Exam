@@ -18,6 +18,8 @@ class BankMetaData:
     subject: str
     course_code: str
     exam_title: str
+    assessment_type: str = ""
+    course_learning_outcomes: list[dict[str, str]] | None = None
 
 
 class QuestionBankFacade:
@@ -30,6 +32,39 @@ class QuestionBankFacade:
         with get_session() as session:
             banks = self._service.list_banks(session)
             return [(b.id, b.name) for b in banks]
+
+    def list_bank_overview_items(self) -> list[dict]:
+        with get_session() as session:
+            rows = self._service.get_bank_overview_rows(session)
+            return [
+                {
+                    "id": row.bank_id,
+                    "name": row.bank_name,
+                    "assessment_type": row.assessment_type,
+                    "course_learning_outcomes": row.course_learning_outcomes,
+                    "question_count": row.question_count,
+                }
+                for row in rows
+            ]
+
+    def list_bank_items(self) -> list[dict]:
+        """Return bank metadata payloads suitable for combo-box style UI usage."""
+        with get_session() as session:
+            banks = self._service.list_banks(session)
+            return [
+                {
+                    "id": bank.id,
+                    "name": bank.name,
+                    "school": bank.school or "",
+                    "department": bank.department or "",
+                    "subject": bank.subject or "",
+                    "course_code": bank.course_code or "",
+                    "exam_title": bank.exam_title or "",
+                    "assessment_type": bank.assessment_type or "",
+                    "course_learning_outcomes": bank.get_course_learning_outcomes(),
+                }
+                for bank in banks
+            ]
 
     def list_questions(
         self,
@@ -58,6 +93,8 @@ class QuestionBankFacade:
                 subject=data.subject,
                 course_code=data.course_code,
                 exam_title=data.exam_title,
+                assessment_type=data.assessment_type,
+                course_learning_outcomes=list(data.course_learning_outcomes or []),
             )
             return bank.id
 
@@ -73,6 +110,8 @@ class QuestionBankFacade:
                 subject=bank.subject or "",
                 course_code=bank.course_code or "",
                 exam_title=bank.exam_title or "",
+                assessment_type=bank.assessment_type or "",
+                course_learning_outcomes=bank.get_course_learning_outcomes(),
             )
 
     def update_bank(self, bank_id: int, data: BankMetaData) -> None:
@@ -86,6 +125,8 @@ class QuestionBankFacade:
                 subject=data.subject,
                 course_code=data.course_code,
                 exam_title=data.exam_title,
+                assessment_type=data.assessment_type,
+                course_learning_outcomes=list(data.course_learning_outcomes or []),
             )
 
     def delete_bank(self, bank_id: int) -> None:

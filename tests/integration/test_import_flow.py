@@ -21,6 +21,7 @@ from core.database.models import Base, Question, QuestionBank, QuestionOption
 from core.domain.services.import_service import ImportService
 from core.utils.constants import QuestionType
 from core.utils.exceptions import ImportValidationError
+from modules.question_bank.importer import QuestionFileParser
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +95,26 @@ class TestImportServicePreview:
         result = service.preview(p, mem_session)
         # Should return a result with errors, not raise
         assert result.has_errors
+
+    def test_preview_large_file_adds_budget_warning(self, mem_session, tmp_path):
+        service = ImportService(
+            parser=QuestionFileParser(soft_row_limit=2, hard_row_limit=10)
+        )
+        p = _write(
+            tmp_path,
+            "".join(
+                f"MC{i:03d},Q{i}?,multiple_choice,,easy,1,,,A{i},B{i},,,,,A,active,,false,true\n"
+                for i in range(1, 4)
+            ),
+        )
+
+        result = service.preview(p, mem_session)
+
+        assert not result.has_errors
+        assert any(
+            issue.severity == "WARNING" and "File lớn" in issue.message
+            for issue in result.issues
+        )
 
 
 class TestImportServiceCommit:
@@ -214,6 +235,23 @@ class TestImportServiceCommit:
 
         assert summary.inserted == 3
         assert mem_session.query(Question).count() == 3
+
+    def test_commit_flushes_in_batches_without_losing_rows(
+        self, mem_session, bank, tmp_path
+    ):
+        service = ImportService(commit_batch_size=2)
+        rows = "".join(
+            f"MC{i:03d},Q{i}?,multiple_choice,,easy,1,,,A{i},B{i},,,,,A,active,,false,true\n"
+            for i in range(1, 6)
+        )
+        p = _write(tmp_path, rows)
+        result = service.preview(p, mem_session)
+
+        summary = service.commit(result, bank.id, mem_session)
+        mem_session.commit()
+
+        assert summary.inserted == 5
+        assert mem_session.query(Question).count() == 5
 
 
 class TestDBDuplicateBlockCommit:

@@ -2,6 +2,54 @@
 
 Desktop-first, offline-first quiz application built with Python and PySide6.
 
+Current runtime resilience baseline:
+- autosave in-progress answers
+- restore the latest in-progress attempt for the same quiz
+- recover countdown state for timed modes after an unexpected app close
+- preserve retryable state if finalize persistence fails
+- show a recovery badge when the current session was restored from autosave
+- enforce stricter Kiểm tra recovery policy after resume or time-up finalize failure
+
+Current data-import resilience baseline:
+- soft/hard row budgets for large previews
+- hard file-size guardrail
+- soft file-size warning before hard stop
+- selective duplicate lookup against the database
+- batch flush during import commit
+- dashboard telemetry summary for recent nhập dữ liệu/runtime warnings
+
+Current Phase 3 analytics baseline:
+- dashboard attempt analytics for completed attempts
+- total attempts, average score, best score
+- aggregate correct / incorrect / skipped counters
+- mode breakdown for Kiểm tra / Luyện tập / Ôn tập
+- recent activity summary with attempts and average score
+- reporting filters by bank / quiz / time window
+- custom date range for reporting
+- window summary for the selected reporting range
+- bank-level breakdown table with attempts / quizzes / scores / last activity
+- CSV export for the currently filtered reporting snapshot
+
+Current export/print workflow baseline:
+- reusable export presets for common teacher workflows
+- save / load / delete đề export templates from the app
+- keep template storage local-first in user data
+- auto-apply default presets by bank or department + subject
+- batch export package with standard print naming
+- print profile for paper size, margins, and student-info block visibility
+- optional cover sheet and watermark
+- optional standalone answer-key `.docx` file for teacher-facing distribution
+- cover sheet template options and watermark presets
+- answer-key naming policy and export-plan preview before rendering
+- batch preview with planned filenames, overwrite warnings, and naming-conflict summary
+- detailed dry-run package manifest with print-content preview before rendering
+
+Current question-bank metadata baseline:
+- the bank metadata dialog uses `Học phần` as the active UI label for the underlying `subject` field
+- `Loại đánh giá` is a controlled dropdown with `Thường xuyên`, `Định kỳ`, `Tổng kết`
+- the bank metadata dialog supports dynamic `Chuẩn đầu ra học phần` rows with `Mã CLO` and `Mô tả CLO`
+- legacy `exam_title` metadata is preserved for export compatibility, but no longer shown as an active field in the bank dialog
+
 ## Quick Start (Development)
 
 ```bash
@@ -14,7 +62,7 @@ python main.py
 ## Run Tests
 
 ```bash
-pytest tests/unit -v
+.venv\Scripts\python.exe -m pytest tests/unit -v
 ```
 
 ## Project Structure
@@ -81,6 +129,54 @@ For full project-level policy, see:
 
 Ứng dụng trắc nghiệm ưu tiên desktop và offline-first, xây dựng bằng Python và PySide6.
 
+Mốc resilience runtime hiện tại:
+- autosave câu trả lời đang làm
+- khôi phục attempt `IN_PROGRESS` mới nhất cho cùng quiz
+- phục hồi đồng hồ đếm ngược của mode có timer sau khi app đóng đột ngột
+- giữ phiên làm bài ở trạng thái có thể thử nộp lại nếu finalize lỗi
+- hiển thị badge báo đây là phiên được khôi phục từ autosave
+- siết policy Kiểm tra cho resume và nhánh `time_up` nhưng finalize lỗi
+
+Mốc resilience import hiện tại:
+- row budget mềm/cứng cho preview dữ liệu lớn
+- hard guardrail theo kích thước file
+- soft warning theo kích thước file trước khi chặn hẳn
+- duplicate lookup có chọn lọc theo candidate rows
+- flush theo batch khi commit import
+- dashboard telemetry summary cho import/runtime warnings gần đây
+
+Mốc analytics Phase 3 hiện tại:
+- dashboard có analytics tổng quan cho các attempt đã hoàn tất
+- hiển thị lượt làm bài, điểm trung bình, điểm cao nhất
+- tổng hợp số câu đúng / sai / bỏ qua trên toàn bộ lịch sử đã hoàn tất
+- có breakdown theo mode Kiểm tra / Luyện tập / Ôn tập
+- có summary xu hướng theo cửa sổ thời gian được chọn
+- có filter theo ngân hàng / quiz / khoảng thời gian
+- có `custom date range` cho reporting
+- có window summary cho tập dữ liệu đang lọc
+- có bảng breakdown theo ngân hàng với lượt làm / quiz / điểm / lần hoạt động cuối
+- có thể xuất `reporting CSV` theo đúng bộ lọc đang chọn
+
+Mốc export/print workflow hiện tại:
+- có preset xuất đề để tái sử dụng cấu hình thường dùng của giáo viên
+- hỗ trợ lưu / nạp / xóa mẫu xuất đề ngay trong app
+- preset được lưu cục bộ trong dữ liệu người dùng để thuận tiện sao lưu
+- có preset mặc định tự áp dụng theo ngân hàng hoặc theo cặp khoa + môn
+- batch export nhiều đề được đóng thành package có naming convention chuẩn
+- print profile hỗ trợ chọn khổ giấy, chỉnh lề và ẩn/hiện block thông tin sinh viên
+- hỗ trợ cover sheet và watermark cho luồng in ấn/phát hành nội bộ
+- có thể tách file đáp án `.docx` riêng cho giáo viên
+- có cover sheet template, watermark preset và chính sách đặt tên file đáp án
+- có bước preview/xác nhận kế hoạch xuất trước khi render thật
+- preview batch có liệt kê file dự kiến, cảnh báo ghi đè và summary naming conflict
+- có `dry-run package manifest` chi tiết hơn, kèm preview nội dung in và print profile trước khi render
+
+Mốc metadata ngân hàng hiện tại:
+- dialog metadata ngân hàng dùng nhãn `Học phần` cho field dữ liệu nền `subject`
+- `Loại đánh giá` là combobox chuẩn với `Thường xuyên`, `Định kỳ`, `Tổng kết`
+- hỗ trợ danh sách động `Chuẩn đầu ra học phần` gồm `Mã CLO` và `Mô tả CLO`
+- metadata `exam_title` cũ vẫn được giữ để tương thích với nhánh export nhưng không còn là field đang dùng trong dialog ngân hàng
+
 ## Bắt đầu nhanh (Môi trường phát triển)
 
 ```bash
@@ -93,7 +189,7 @@ python main.py
 ## Chạy test
 
 ```bash
-pytest tests/unit -v
+.venv\Scripts\python.exe -m pytest tests/unit -v
 ```
 
 ## Cấu trúc dự án

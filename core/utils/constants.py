@@ -11,7 +11,7 @@ from enum import Enum
 class QuestionType(str, Enum):
     """Types of questions supported by the application.
 
-    DB stores the short codes (MC, MA, BLANK, SA).
+    DB stores short codes (MC, MA, BLANK, TF, SA, ES).
     Import files use the long form (multiple_choice, etc.) and
     the import parser is responsible for the mapping.
     """
@@ -19,7 +19,9 @@ class QuestionType(str, Enum):
     MULTIPLE_CHOICE = "MC"
     MULTIPLE_ANSWER = "MA"
     BLANK = "BLANK"
+    TRUE_FALSE = "TF"
     SHORT_ANSWER = "SA"
+    ESSAY = "ES"
 
 
 # Mapping from import-format long names to internal DB codes
@@ -27,7 +29,9 @@ QUESTION_TYPE_IMPORT_MAP: dict[str, QuestionType] = {
     "multiple_choice": QuestionType.MULTIPLE_CHOICE,
     "multiple_answer": QuestionType.MULTIPLE_ANSWER,
     "blank": QuestionType.BLANK,
+    "true_false": QuestionType.TRUE_FALSE,
     "short_answer": QuestionType.SHORT_ANSWER,
+    "essay": QuestionType.ESSAY,
 }
 
 

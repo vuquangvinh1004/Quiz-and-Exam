@@ -72,16 +72,10 @@ class _DummyView:
 		self._selector = _DummySelector()
 		self._chapter_spins = {}
 		self._type_spins = {}
-		self._difficulty_spins = {}
+		self._clo_spins = {}
 
 	def _current_bank_id(self):
 		return 1
-
-	def _selected_types(self):
-		return ["MC"]
-
-	def _selected_difficulties(self):
-		return ["easy"]
 
 	def _eligible_questions(self):
 		return [SimpleNamespace(id=101), SimpleNamespace(id=102), SimpleNamespace(id=103)]
@@ -160,6 +154,6 @@ def test_run_batch_generation_creates_multiple_files(tmp_path, monkeypatch):
 
 	quiz_builder_batch.run_batch_generation(view)
 
-	generated_files = list(tmp_path.glob("*.docx"))
+	generated_files = list(tmp_path.rglob("*.docx"))
 	assert len(generated_files) == 2
 	assert any("Đã tạo 2 đề" in msg for msg in generated_info_messages)

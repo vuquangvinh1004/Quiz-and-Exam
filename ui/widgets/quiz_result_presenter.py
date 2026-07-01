@@ -1,4 +1,4 @@
-"""Presentation helpers for quiz runner feedback and result summaries."""
+"""Tiện ích trình bày cho phản hồi và tóm tắt kết quả bài làm."""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
@@ -9,11 +9,11 @@ from modules.grading.result_builder import AttemptResultData, ModeSummaryBuilder
 
 
 class QuizResultPresenter:
-    """Builds display text/styles for quiz runner result UI."""
+    """Tạo text/style hiển thị cho UI kết quả bài làm."""
 
     @staticmethod
     def build_study_feedback(grade_result, explanation: str) -> tuple[str, str]:
-        """Return (html_text, inline_style) for STUDY per-question feedback."""
+        """Return (html_text, inline_style) for Ôn tập per-question feedback."""
         if grade_result.feedback_state == "skipped":
             text = "⬜ Chưa trả lời câu này."
             style = "background: #f0f0f0; color: #555;"
@@ -30,7 +30,7 @@ class QuizResultPresenter:
 
     @staticmethod
     def show_non_exam_summary(parent: QWidget, data: AttemptResultData) -> None:
-        """Show summary dialog used by PRACTICE/STUDY modes."""
+        """Show summary dialog used by Luyện tập/Ôn tập modes."""
         msg = QMessageBox(parent)
         msg.setWindowTitle("Kết quả bài làm")
         msg.setIcon(QMessageBox.Icon.Information)
@@ -44,7 +44,7 @@ class QuizResultPresenter:
         mode_label = {
             QuizMode.EXAM.value: "Kiểm tra",
             QuizMode.PRACTICE.value: "Luyện tập",
-            QuizMode.STUDY.value: "Học tập",
+            QuizMode.STUDY.value: "Ôn tập",
         }.get(mode, mode)
         pct = (data.score / data.max_score * 100) if data.max_score else 0
         return (

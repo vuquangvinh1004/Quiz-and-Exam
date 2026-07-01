@@ -257,3 +257,25 @@ class TestExportFlow:
             assert tmp_path.stat().st_size > 0
         finally:
             tmp_path.unlink(missing_ok=True)
+
+    def test_standalone_answer_key_export(self, mem_session, bank):
+        _add_mc(mem_session, bank.id)
+        _add_blank(mem_session, bank.id)
+        mem_session.flush()
+
+        selector = QuestionSelector()
+        orm_qs = selector.select(mem_session, bank.id, count=2, shuffle=False)
+        snaps = selector.build_snapshots(orm_qs, shuffle_options=False)
+
+        meta = ExamMeta(exam_title="Standalone Key")
+        config = ExportConfig(show_answer_key=True, group_by_type=True)
+        doc = WordRenderer().render_answer_key_document(snaps, meta, config)
+
+        with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+
+        try:
+            doc.save(str(tmp_path))
+            assert tmp_path.stat().st_size > 0
+        finally:
+            tmp_path.unlink(missing_ok=True)
