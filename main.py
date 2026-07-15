@@ -21,6 +21,7 @@ from PySide6.QtWidgets import QApplication
 from config.paths import APP_DIR, DB_PATH, LOGS_DIR, ensure_data_dirs
 from config.settings import settings
 from core.database.connection import create_db_engine, init_db
+from core.database.schema_repair import repair_questions_type_constraint
 from core.utils.exceptions import MigrationError
 from core.utils.logger import configure_logging, get_logger
 
@@ -67,6 +68,9 @@ def _initialize_database() -> None:
             return
         logger.error(f"Migration failed on existing DB; startup aborted: {exc}")
         raise
+
+    if repair_questions_type_constraint(DB_PATH):
+        logger.warning("Repaired legacy questions schema to allow ES/TF question types.")
 
 
 def main() -> int:

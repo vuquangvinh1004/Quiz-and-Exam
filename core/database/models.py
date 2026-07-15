@@ -77,7 +77,10 @@ class QuestionBank(Base):
         """Deserialize CLO metadata into a Python list."""
         if not self.course_learning_outcomes:
             return []
-        data = json.loads(self.course_learning_outcomes)
+        try:
+            data = json.loads(self.course_learning_outcomes)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return []
         if not isinstance(data, list):
             return []
         items: list[dict[str, str]] = []
@@ -156,18 +159,122 @@ class Question(Base):
         order_by="QuestionOption.sort_order",
     )
 
-    def get_accepted_answers(self) -> list[str]:
-        """Deserialize JSON accepted_answers field into a Python list."""
+    def get_accepted_answer_payload(self) -> list[str] | dict[str, object]:
+        """Deserialize the raw accepted-answers payload from JSON storage."""
         if not self.accepted_answers:
             return []
         return json.loads(self.accepted_answers)
 
-    def set_accepted_answers(self, answers: list[str]) -> None:
+    def get_accepted_answers(self) -> list[str]:
+        """Return normalized accepted answers from list or structured payloads."""
+        data = self.get_accepted_answer_payload()
+        if isinstance(data, list):
+            return [str(answer) for answer in data]
+        if isinstance(data, dict):
+            answers = data.get("answers", [])
+            if not answers:
+                rubric = data.get("rubric", [])
+                if isinstance(rubric, list):
+                    answers = [
+                        str(row.get("content", "")).strip()
+                        for row in rubric
+                        if isinstance(row, dict) and str(row.get("content", "")).strip()
+                    ]
+            if isinstance(answers, list):
+                return [str(answer) for answer in answers]
+        return []
+
+    def set_accepted_answers(self, answers: list[str] | dict[str, object]) -> None:
         """Serialize and store accepted answers as JSON."""
         self.accepted_answers = json.dumps(answers, ensure_ascii=False)
 
+    def is_problem_question(self) -> bool:
+        """Return whether this essay question is stored as a problem/rubric payload."""
+        data = self.get_accepted_answer_payload()
+        return isinstance(data, dict) and data.get("kind") == "problem"
+
+    def get_problem_rubric(self) -> list[dict[str, object]]:
+        """Return structured rubric rows for problem questions."""
+        data = self.get_accepted_answer_payload()
+        if not isinstance(data, dict):
+            return []
+        rubric = data.get("rubric", [])
+        return rubric if isinstance(rubric, list) else []
+
+    def get_problem_template_id(self) -> int | None:
+        """Return the template id saved with a problem payload, if any."""
+        data = self.get_accepted_answer_payload()
+        if not isinstance(data, dict):
+            return None
+        raw = data.get("template_id")
+        try:
+            return int(raw) if raw is not None and str(raw).strip() else None
+        except (TypeError, ValueError):
+            return None
+
+    def get_problem_template_name(self) -> str:
+        """Return the template name saved with a problem payload, if any."""
+        data = self.get_accepted_answer_payload()
+        if not isinstance(data, dict):
+            return ""
+        return str(data.get("template_name", "") or "").strip()
+
     def __repr__(self) -> str:
         return f"<Question id={self.id} type={self.question_type} code={self.question_code!r}>"
+
+
+# ---------------------------------------------------------------------------
+# question_rubric_templates
+# ---------------------------------------------------------------------------
+
+class QuestionRubricTemplate(Base):
+    """Stores reusable rubric templates for problem-style questions."""
+
+    __tablename__ = "question_rubric_templates"
+    __table_args__ = (
+        UniqueConstraint("bank_id", "name", name="uq_question_rubric_templates_bank_name"),
+        Index("ix_question_rubric_templates_bank_id", "bank_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    bank_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("question_banks.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    template_payload: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+    def get_rows(self) -> list[dict[str, object]]:
+        """Deserialize template rows from the JSON payload."""
+        if not self.template_payload:
+            return []
+        data = json.loads(self.template_payload)
+        if isinstance(data, dict):
+            rows = data.get("rows", [])
+            if isinstance(rows, list):
+                return rows
+            return []
+        if isinstance(data, list):
+            return data
+        return []
+
+    def set_rows(self, rows: list[dict[str, object]]) -> None:
+        """Serialize template rows into the JSON payload."""
+        payload = {
+            "version": 1,
+            "rows": rows,
+        }
+        self.template_payload = json.dumps(payload, ensure_ascii=False)
+
+    def __repr__(self) -> str:
+        return f"<QuestionRubricTemplate id={self.id} bank_id={self.bank_id} name={self.name!r}>"
 
 
 # ---------------------------------------------------------------------------

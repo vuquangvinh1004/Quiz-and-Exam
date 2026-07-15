@@ -5,7 +5,13 @@ from dataclasses import dataclass
 
 from core.database.models import Question
 from core.database.session import get_session
+from core.domain.services.problem_template_service import ProblemTemplateService
 from core.domain.services.question_service import QuestionEditData, QuestionService
+from core.domain.services.question_service_types import (
+    ProblemRubricRow,
+    ProblemRubricTemplateData,
+    ProblemRubricTemplateSummary,
+)
 
 
 @dataclass
@@ -148,3 +154,35 @@ class QuestionBankFacade:
     def update_question(self, question_id: int, data: QuestionEditData) -> Question:
         with get_session() as session:
             return self._service.update_question(session, question_id, data)
+
+    def list_problem_templates(self, bank_id: int) -> list[ProblemRubricTemplateSummary]:
+        with get_session() as session:
+            return ProblemTemplateService.list_templates(session, bank_id)
+
+    def save_problem_template(
+        self,
+        bank_id: int,
+        name: str,
+        rows: list[ProblemRubricRow],
+    ) -> ProblemRubricTemplateSummary:
+        with get_session() as session:
+            return ProblemTemplateService.save_template(session, bank_id, name, rows)
+
+    def get_problem_template(
+        self,
+        template_id: int,
+    ) -> ProblemRubricTemplateData | None:
+        with get_session() as session:
+            return ProblemTemplateService.get_template(session, template_id)
+
+    def delete_problem_template(self, template_id: int) -> None:
+        with get_session() as session:
+            ProblemTemplateService.delete_template(session, template_id)
+
+    def rename_problem_template(
+        self,
+        template_id: int,
+        new_name: str,
+    ) -> ProblemRubricTemplateSummary:
+        with get_session() as session:
+            return ProblemTemplateService.rename_template(session, template_id, new_name)

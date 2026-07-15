@@ -216,6 +216,8 @@ class ExamExportPanel(QGroupBox):
         self._exp_cb_scoring.setChecked(True)
         self._exp_cb_answer_key = QCheckBox("Kèm đáp án và thang điểm")
         self._exp_cb_answer_key.setChecked(True)
+        self._exp_cb_raw_latex = QCheckBox("Giữ nguyên LaTeX trong đáp án/rubric")
+        self._exp_cb_raw_latex.setChecked(False)
         self._exp_cb_show_points = QCheckBox("Hiển thị điểm")
         self._exp_cb_show_points.setChecked(False)
         self._exp_cb_statistics = QCheckBox("Thống kê câu hỏi")
@@ -234,6 +236,7 @@ class ExamExportPanel(QGroupBox):
             self._exp_cb_answer_sheet,
             self._exp_cb_scoring,
             self._exp_cb_answer_key,
+            self._exp_cb_raw_latex,
             self._exp_cb_show_points,
             self._exp_cb_statistics,
             self._exp_cb_cover_sheet,
@@ -366,6 +369,7 @@ class ExamExportPanel(QGroupBox):
             group_by_type=self._exp_group_by_type.isChecked(),
             show_cover_sheet=self._exp_cb_cover_sheet.isChecked(),
             split_answer_key_file=self._exp_cb_split_answer_key.isChecked(),
+            raw_latex_answer_key=self._exp_cb_raw_latex.isChecked(),
             watermark_text=self._exp_watermark.text().strip(),
             watermark_preset=str(self._exp_watermark_preset.currentData()),
             cover_sheet_template=str(self._exp_cover_template.currentData()),
@@ -406,6 +410,7 @@ class ExamExportPanel(QGroupBox):
             show_question_statistics=self._exp_cb_statistics.isChecked(),
             show_cover_sheet=self._exp_cb_cover_sheet.isChecked(),
             split_answer_key_file=self._exp_cb_split_answer_key.isChecked(),
+            raw_latex_answer_key=self._exp_cb_raw_latex.isChecked(),
             watermark_text=self._exp_watermark.text().strip(),
             watermark_preset=str(self._exp_watermark_preset.currentData()),
             cover_sheet_template=str(self._exp_cover_template.currentData()),
@@ -437,6 +442,7 @@ class ExamExportPanel(QGroupBox):
         self._exp_cb_statistics.setChecked(preset.show_question_statistics)
         self._exp_cb_cover_sheet.setChecked(preset.show_cover_sheet)
         self._exp_cb_split_answer_key.setChecked(preset.split_answer_key_file)
+        self._exp_cb_raw_latex.setChecked(getattr(preset, "raw_latex_answer_key", False))
         self._exp_watermark.setText(preset.watermark_text)
         self._select_combo_data(self._exp_watermark_preset, preset.watermark_preset)
         self._select_combo_data(self._exp_cover_template, preset.cover_sheet_template)
@@ -717,6 +723,7 @@ class ExamExportPanel(QGroupBox):
             f"Phiếu trả lời: {'Có' if render_config.show_answer_sheet else 'Không'}",
             f"Quy định chấm: {'Có' if render_config.show_scoring_rules else 'Không'}",
             f"Đáp án trong file đề: {'Không' if separate_answer_key else ('Có' if render_config.show_answer_key else 'Không')}",
+            f"Raw LaTeX đáp án: {'Có' if render_config.raw_latex_answer_key else 'Không'}",
             f"Hiển thị điểm: {'Có' if render_config.show_question_points else 'Không'}",
             f"Thống kê câu hỏi: {'Có' if render_config.show_question_statistics else 'Không'}",
             f"Tách đáp án: {'Có' if separate_answer_key else 'Không'}",
@@ -1088,6 +1095,7 @@ class ExamExportPanel(QGroupBox):
                     group_by_type=render_config.group_by_type,
                     show_cover_sheet=False,
                     split_answer_key_file=False,
+                    raw_latex_answer_key=render_config.raw_latex_answer_key,
                     watermark_text=render_config.watermark_text,
                     essay_questions=list(render_config.essay_questions),
                 )

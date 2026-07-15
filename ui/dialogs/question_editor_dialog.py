@@ -24,7 +24,9 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QScrollArea,
+    QTextBrowser,
     QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -37,6 +39,7 @@ from core.utils.constants import (
     QuestionStatus,
     QuestionType,
 )
+from core.utils.latex_rendering import render_inline_latex_html
 from ui.facades.question_bank_facade import QuestionBankFacade
 from ui.styles import apply_checkbox_style
 
@@ -149,68 +152,94 @@ class QuestionEditorDialog(QDialog):
         root.addWidget(scroll, stretch=1)
 
         # ── Basic info ──────────────────────────────────────────────
-        basic = QGroupBox("Thông tin cơ bản")
-        fl = QFormLayout(basic)
-        fl.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        def _build_basic_form(parent: QWidget) -> QFormLayout:
+            fl = QFormLayout(parent)
+            fl.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
 
-        self._type_combo = QComboBox()
-        for qt in _TYPE_FROM_INDEX:
-            self._type_combo.addItem(_TYPE_LABELS[qt], userData=qt)
-        self._type_combo.currentIndexChanged.connect(self._on_type_changed)
-        fl.addRow("Loại câu hỏi *:", self._type_combo)
+            self._type_combo = QComboBox()
+            for qt in _TYPE_FROM_INDEX:
+                self._type_combo.addItem(_TYPE_LABELS[qt], userData=qt)
+            self._type_combo.currentIndexChanged.connect(self._on_type_changed)
+            fl.addRow("Loại câu hỏi *:", self._type_combo)
 
-        self._content_edit = QTextEdit()
-        self._content_edit.setPlaceholderText(
-            "Nhập nội dung câu hỏi…\n"
-            f"Với loại Điền vào chỗ trống, dùng {BLANK_PLACEHOLDER} để đánh dấu chỗ trống."
-        )
-        self._content_edit.setFixedHeight(90)
-        fl.addRow("Nội dung *:", self._content_edit)
-
-        self._code_edit = QLineEdit()
-        self._code_edit.setPlaceholderText("Tự động nếu để trống")
-        fl.addRow("Mã câu hỏi:", self._code_edit)
-
-        self._learning_outcome_combo = QComboBox()
-        self._learning_outcome_combo.addItem("Không gắn CLO", userData="")
-        for row in self._bank_clos:
-            code = str(row.get("code", "")).strip()
-            description = str(row.get("description", "")).strip()
-            if not code:
-                continue
-            self._learning_outcome_combo.addItem(code, userData=code)
-            idx = self._learning_outcome_combo.count() - 1
-            self._learning_outcome_combo.setItemData(
-                idx,
-                description,
-                Qt.ItemDataRole.ToolTipRole,
+            self._content_edit = QTextEdit()
+            self._content_edit.setPlaceholderText(
+                "Nhập nội dung câu hỏi…\n"
+                f"Với loại Điền vào chỗ trống, dùng {BLANK_PLACEHOLDER} để đánh dấu chỗ trống."
             )
-        fl.addRow("Chuẩn đầu ra:", self._learning_outcome_combo)
+            self._content_edit.setFixedHeight(90)
+            self._content_edit.textChanged.connect(self._refresh_formula_preview)
+            fl.addRow("Nội dung *:", self._content_edit)
 
-        self._category_edit = QLineEdit()
-        fl.addRow("Chương:", self._category_edit)
+            self._code_edit = QLineEdit()
+            self._code_edit.setPlaceholderText("Tự động nếu để trống")
+            fl.addRow("Mã câu hỏi:", self._code_edit)
 
-        self._difficulty_combo = QComboBox()
-        self._difficulty_combo.currentIndexChanged.connect(self._apply_default_score_for_level)
-        fl.addRow("Mức độ:", self._difficulty_combo)
+            self._learning_outcome_combo = QComboBox()
+            self._learning_outcome_combo.addItem("Không gắn CLO", userData="")
+            for row in self._bank_clos:
+                code = str(row.get("code", "")).strip()
+                description = str(row.get("description", "")).strip()
+                if not code:
+                    continue
+                self._learning_outcome_combo.addItem(code, userData=code)
+                idx = self._learning_outcome_combo.count() - 1
+                self._learning_outcome_combo.setItemData(
+                    idx,
+                    description,
+                    Qt.ItemDataRole.ToolTipRole,
+                )
+            fl.addRow("Chuẩn đầu ra:", self._learning_outcome_combo)
 
-        self._score_spin = QDoubleSpinBox()
-        self._score_spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-        self._score_spin.setRange(0.01, 100.0)
-        self._score_spin.setSingleStep(0.5)
-        self._score_spin.setValue(_LEVEL_DEFAULT_SCORES["Nhớ"])
-        fl.addRow("Điểm:", self._score_spin)
+            self._category_edit = QLineEdit()
+            fl.addRow("Chương:", self._category_edit)
 
-        self._status_combo = QComboBox()
-        for s in QuestionStatus:
-            self._status_combo.addItem(s.value.capitalize(), userData=s.value)
-        fl.addRow("Trạng thái:", self._status_combo)
+            self._difficulty_combo = QComboBox()
+            self._difficulty_combo.currentIndexChanged.connect(self._apply_default_score_for_level)
+            self._difficulty_combo.currentIndexChanged.connect(self._refresh_formula_preview)
+            fl.addRow("Mức độ:", self._difficulty_combo)
 
-        self._tags_edit = QLineEdit()
-        self._tags_edit.setPlaceholderText("tag1, tag2, tag3")
-        fl.addRow("Tags:", self._tags_edit)
+            self._score_spin = QDoubleSpinBox()
+            self._score_spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+            self._score_spin.setRange(0.01, 100.0)
+            self._score_spin.setSingleStep(0.5)
+            self._score_spin.setValue(_LEVEL_DEFAULT_SCORES["Nhớ"])
+            self._score_spin.valueChanged.connect(self._refresh_formula_preview)
+            fl.addRow("Điểm:", self._score_spin)
 
-        form_layout.addWidget(basic)
+            self._status_combo = QComboBox()
+            for s in QuestionStatus:
+                self._status_combo.addItem(s.value.capitalize(), userData=s.value)
+            fl.addRow("Trạng thái:", self._status_combo)
+
+            self._tags_edit = QLineEdit()
+            self._tags_edit.setPlaceholderText("tag1, tag2, tag3")
+            fl.addRow("Tags:", self._tags_edit)
+            return fl
+
+        if self._question is not None:
+            basic = QGroupBox("Thông tin cơ bản")
+            basic_layout = QVBoxLayout(basic)
+            basic_layout.setContentsMargins(8, 8, 8, 8)
+            basic_layout.setSpacing(6)
+            self._basic_info_toggle = QToolButton()
+            self._basic_info_toggle.setCheckable(True)
+            self._basic_info_toggle.setChecked(False)
+            self._basic_info_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+            self._basic_info_toggle.setArrowType(Qt.ArrowType.RightArrow)
+            self._basic_info_toggle.setText("Mở rộng")
+            basic_layout.addWidget(self._basic_info_toggle)
+
+            self._basic_info_content = QWidget()
+            _build_basic_form(self._basic_info_content)
+            self._basic_info_content.setVisible(False)
+            basic_layout.addWidget(self._basic_info_content)
+            self._basic_info_toggle.toggled.connect(self._toggle_basic_info_panel)
+            form_layout.addWidget(basic)
+        else:
+            basic = QGroupBox("Thông tin cơ bản")
+            _build_basic_form(basic)
+            form_layout.addWidget(basic)
 
         # ── Options section (MC / MA) ────────────────────────────────
         self._options_group = QGroupBox("Các lựa chọn")
@@ -223,9 +252,11 @@ class QuestionEditorDialog(QDialog):
             lbl.setFixedWidth(20)
             edit = QLineEdit()
             edit.setPlaceholderText(f"Lựa chọn {label}…")
+            edit.textChanged.connect(self._refresh_formula_preview)
             cb = QCheckBox("Đúng")
             apply_checkbox_style(cb)
             cb.setFixedWidth(60)
+            cb.stateChanged.connect(self._refresh_formula_preview)
             row_hl.addWidget(lbl)
             row_hl.addWidget(edit, stretch=1)
             row_hl.addWidget(cb)
@@ -248,15 +279,18 @@ class QuestionEditorDialog(QDialog):
 
         self._answers_edit = QLineEdit()
         self._answers_edit.setPlaceholderText("Đáp án 1||Đáp án 2||…")
+        self._answers_edit.textChanged.connect(self._refresh_formula_preview)
         ans_fl.addRow("Đáp án (*):", self._answers_edit)
 
         self._case_sensitive_cb = QCheckBox("Phân biệt hoa thường")
         apply_checkbox_style(self._case_sensitive_cb)
+        self._case_sensitive_cb.stateChanged.connect(self._refresh_formula_preview)
         ans_fl.addRow("", self._case_sensitive_cb)
 
         self._trim_whitespace_cb = QCheckBox("Bỏ khoảng trắng đầu/cuối")
         apply_checkbox_style(self._trim_whitespace_cb)
         self._trim_whitespace_cb.setChecked(True)
+        self._trim_whitespace_cb.stateChanged.connect(self._refresh_formula_preview)
         ans_fl.addRow("", self._trim_whitespace_cb)
 
         blank_hint = QLabel(
@@ -273,12 +307,48 @@ class QuestionEditorDialog(QDialog):
         aux_fl = QFormLayout(aux)
         self._hint_edit = QLineEdit()
         self._hint_edit.setPlaceholderText("Hiển thị trong chế độ Luyện tập / Ôn tập")
+        self._hint_edit.textChanged.connect(self._refresh_formula_preview)
         aux_fl.addRow("Gợi ý:", self._hint_edit)
         self._explanation_edit = QTextEdit()
         self._explanation_edit.setPlaceholderText("Giải thích sau khi kết thúc bài…")
         self._explanation_edit.setFixedHeight(70)
+        self._explanation_edit.textChanged.connect(self._refresh_formula_preview)
         aux_fl.addRow("Giải thích:", self._explanation_edit)
         form_layout.addWidget(aux)
+
+        self._formula_preview_group = QGroupBox("Xem trước câu hỏi")
+        preview_layout = QVBoxLayout(self._formula_preview_group)
+        self._formula_preview_toggle = QToolButton()
+        self._formula_preview_toggle.setCheckable(True)
+        self._formula_preview_toggle.setChecked(True)
+        self._formula_preview_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self._formula_preview_toggle.setArrowType(Qt.ArrowType.DownArrow)
+        self._formula_preview_toggle.setText("Thu gọn")
+        self._formula_preview_toggle.toggled.connect(self._toggle_formula_preview)
+        preview_layout.addWidget(self._formula_preview_toggle)
+
+        self._formula_preview_content = QWidget()
+        preview_content_layout = QVBoxLayout(self._formula_preview_content)
+        preview_content_layout.setContentsMargins(0, 0, 0, 0)
+        preview_content_layout.setSpacing(6)
+
+        self._formula_preview_browser = QTextBrowser()
+        self._formula_preview_browser.setOpenExternalLinks(False)
+        self._formula_preview_browser.setMinimumHeight(280)
+        self._formula_preview_browser.setStyleSheet(
+            "QTextBrowser { background-color: #ffffff; border: 1px solid #d6dbe6; }"
+            "QTextBrowser viewport { background-color: #ffffff; }"
+            "QTextBrowser .math { font-weight: 600; }"
+        )
+        preview_content_layout.addWidget(self._formula_preview_browser)
+        self._formula_preview_hint = QLabel(
+            "Xem nhanh nội dung và công thức đang nhập theo định dạng render."
+        )
+        self._formula_preview_hint.setStyleSheet("color: #666;")
+        self._formula_preview_hint.setWordWrap(True)
+        preview_content_layout.addWidget(self._formula_preview_hint)
+        preview_layout.addWidget(self._formula_preview_content)
+        form_layout.addWidget(self._formula_preview_group)
 
         # ── Buttons ──────────────────────────────────────────────────
         btn_box = QDialogButtonBox(
@@ -293,6 +363,7 @@ class QuestionEditorDialog(QDialog):
 
         # Initial visibility
         self._on_type_changed(0)
+        self._refresh_formula_preview()
 
     # ------------------------------------------------------------------
     # Dynamic type switching
@@ -314,6 +385,7 @@ class QuestionEditorDialog(QDialog):
         self._answers_group.setVisible(is_blank_sa)
         self._sync_option_rows(qt)
         self._populate_level_options(qt, preferred=self._difficulty_combo.currentData())
+        self._refresh_formula_preview()
 
     # ------------------------------------------------------------------
     # Load existing question
@@ -372,6 +444,8 @@ class QuestionEditorDialog(QDialog):
                 self._answers_edit.setText("||".join(answers))
             except Exception:
                 self._answers_edit.setText(q.accepted_answers)
+
+        self._refresh_formula_preview()
 
     # ------------------------------------------------------------------
     # Save
@@ -492,3 +566,125 @@ class QuestionEditorDialog(QDialog):
     def _normalize_level_value(value: str | None) -> str:
         raw = str(value or "").strip()
         return _LEGACY_DIFFICULTY_TO_LEVEL.get(raw, raw)
+
+    def _refresh_formula_preview(self, *_args) -> None:
+        if not hasattr(self, "_formula_preview_browser"):
+            return
+
+        qt = self._type_combo.currentData()
+        content = self._content_edit.toPlainText().strip()
+        explanation = self._explanation_edit.toPlainText().strip()
+        hint = self._hint_edit.text().strip()
+        difficulty = str(self._difficulty_combo.currentData() or "").strip()
+        score = self._score_spin.value()
+
+        def _render_text(text: str, *, empty: str) -> str:
+            if text:
+                return f"<div class='text'>{render_inline_latex_html(text)}</div>"
+            return f"<div class='empty'>{empty}</div>"
+
+        html_parts = [
+            "<html><head><style>",
+            "body { font-family: 'Segoe UI', sans-serif; font-size: 12pt; color: #1f2937; margin: 0; }",
+            ".panel { border: 1px solid #e3e8f3; border-radius: 8px; padding: 12px; background: #fff; }",
+            ".section { margin-bottom: 12px; }",
+            ".heading { font-weight: 700; color: #0f172a; margin-bottom: 6px; }",
+            ".meta { color: #6b7280; font-size: 10.5pt; margin-bottom: 8px; line-height: 1.45; }",
+            ".label { font-weight: 700; color: #111827; margin-bottom: 4px; }",
+            ".text { white-space: pre-wrap; line-height: 1.5; }",
+            ".empty { color: #9ca3af; font-style: italic; }",
+            ".score { color: #c0392b; font-weight: 700; }",
+            ".answer-list { margin: 0 0 0 20px; padding: 0; }",
+            ".answer-list li { margin-bottom: 4px; }",
+            ".math { font-weight: 600; color: #111827; }",
+            "</style></head><body><div class='panel'>",
+            "<div class='section'>",
+            "<div class='heading'>Nội dung câu hỏi</div>",
+            _render_text(content, empty="Chưa nhập nội dung."),
+            "</div>",
+        ]
+
+        meta_bits: list[str] = []
+        if qt:
+            meta_bits.append(f"Loại: {render_inline_latex_html(_TYPE_LABELS.get(qt, str(qt)))}")
+        if difficulty:
+            meta_bits.append(f"Mức độ: {render_inline_latex_html(difficulty)}")
+        meta_bits.append(f"<span class='score'>Điểm: {score:.2f}</span>")
+        html_parts.extend(
+            [
+                "<div class='section'>",
+                "<div class='heading'>Thông tin đang chọn</div>",
+                f"<div class='meta'>{' &nbsp;|&nbsp; '.join(meta_bits)}</div>",
+                _render_text(hint, empty="Chưa có gợi ý."),
+                "</div>",
+            ]
+        )
+
+        if qt in (QuestionType.MULTIPLE_CHOICE, QuestionType.MULTIPLE_ANSWER, QuestionType.TRUE_FALSE):
+            option_items: list[str] = []
+            for label, (_, edit, cb) in zip(VALID_OPTION_LABELS, self._option_rows, strict=False):
+                if not edit.isVisible():
+                    continue
+                option_text = edit.text().strip()
+                mark = "✓" if cb.isChecked() else "✗"
+                rendered = (
+                    render_inline_latex_html(option_text)
+                    if option_text
+                    else "<span class='empty'>(trống)</span>"
+                )
+                option_items.append(f"<li><b>{label}.</b> [{mark}] {rendered}</li>")
+            html_parts.extend(
+                [
+                    "<div class='section'>",
+                    "<div class='heading'>Phương án</div>",
+                    "<ul class='answer-list'>",
+                    "".join(option_items) if option_items else "<li class='empty'>Chưa có phương án.</li>",
+                    "</ul>",
+                    "</div>",
+                ]
+            )
+        else:
+            accepted = [a.strip() for a in self._answers_edit.text().split("||") if a.strip()]
+            if accepted:
+                items = "".join(f"<li>{render_inline_latex_html(a)}</li>" for a in accepted)
+                accepted_html = f"<ol class='answer-list'>{items}</ol>"
+            else:
+                accepted_html = "<div class='empty'>Chưa có đáp án chấp nhận.</div>"
+            html_parts.extend(
+                [
+                    "<div class='section'>",
+                    "<div class='heading'>Đáp án chấp nhận</div>",
+                    accepted_html,
+                    "</div>",
+                ]
+            )
+
+        if explanation:
+            html_parts.extend(
+                [
+                    "<div class='section'>",
+                    "<div class='heading'>Giải thích</div>",
+                    _render_text(explanation, empty=""),
+                    "</div>",
+                ]
+            )
+
+        html_parts.append("</div></body></html>")
+        self._formula_preview_browser.setHtml("".join(html_parts))
+
+    def _toggle_basic_info_panel(self, expanded: bool) -> None:
+        if not hasattr(self, "_basic_info_content") or self._basic_info_content is None:
+            return
+        self._basic_info_content.setVisible(expanded)
+        if hasattr(self, "_basic_info_toggle") and self._basic_info_toggle is not None:
+            self._basic_info_toggle.setArrowType(
+                Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow
+            )
+            self._basic_info_toggle.setText("Thu gọn" if expanded else "Mở rộng")
+
+    def _toggle_formula_preview(self, expanded: bool) -> None:
+        self._formula_preview_content.setVisible(expanded)
+        self._formula_preview_toggle.setArrowType(
+            Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow
+        )
+        self._formula_preview_toggle.setText("Thu gọn" if expanded else "Mở rộng")

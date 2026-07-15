@@ -146,6 +146,15 @@ class QuestionSelector:
             else:
                 snap["options"] = []
                 snap["accepted_answers"] = q.get_accepted_answers()
+                if q.is_problem_question():
+                    snap["question_variant"] = "problem"
+                    snap["problem_rubric"] = q.get_problem_rubric()
+                    template_name = q.get_problem_template_name()
+                    if template_name:
+                        snap["problem_template_name"] = template_name
+                    template_id = q.get_problem_template_id()
+                    if template_id is not None:
+                        snap["problem_template_id"] = template_id
             result.append(snap)
         return result
 

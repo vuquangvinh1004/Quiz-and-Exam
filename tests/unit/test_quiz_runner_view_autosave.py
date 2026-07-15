@@ -33,8 +33,12 @@ class _ControllerFail:
 
 class _LoggerSpy:
     def __init__(self) -> None:
+        self.info_messages: list[str] = []
         self.debug_messages: list[str] = []
         self.warning_messages: list[str] = []
+
+    def info(self, msg: str) -> None:
+        self.info_messages.append(msg)
 
     def debug(self, msg: str) -> None:
         self.debug_messages.append(msg)
@@ -104,4 +108,5 @@ def test_autosave_logs_warning_on_failure(qtbot, monkeypatch) -> None:
 
     view._autosave()
 
-    assert any("Autosave failed" in msg for msg in logger_spy.warning_messages)
+    assert any("event=autosave_failed" in msg for msg in logger_spy.info_messages)
+    assert any("event=autosave_error_detail" in msg for msg in logger_spy.info_messages)

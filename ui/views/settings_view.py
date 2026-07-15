@@ -165,7 +165,7 @@ class SettingsView(QWidget):
             idx = self._theme_combo.findData(theme)
             if idx >= 0:
                 self._theme_combo.setCurrentIndex(idx)
-        except Exception:
+        except (RuntimeError, ValueError, OSError):
             pass
 
     # ------------------------------------------------------------------
@@ -179,7 +179,7 @@ class SettingsView(QWidget):
             label = self._theme_combo.currentText()
             self._lbl_theme_status.setText(f"Đã lưu: {label}")
             self.theme_changed.emit(theme)
-        except Exception as exc:
+        except (RuntimeError, ValueError, OSError) as exc:
             QMessageBox.warning(self, "Lỗi", f"Không thể lưu cài đặt:\n{exc}")
 
     # ------------------------------------------------------------------
@@ -205,7 +205,7 @@ class SettingsView(QWidget):
             }
             label = mode_labels.get(cfg.mode, cfg.mode)
             self._sub_status.setText(f"Trạng thái hiện tại: {label}")
-        except Exception:
+        except (RuntimeError, ValueError, OSError):
             self._sub_status.setText("")
 
     # ------------------------------------------------------------------
@@ -220,7 +220,7 @@ class SettingsView(QWidget):
             QMessageBox.information(
                 self, "Sao lưu thành công", f"Đã tạo bản sao lưu:\n{dest}"
             )
-        except Exception as exc:
+        except (RuntimeError, ValueError, OSError) as exc:
             QMessageBox.warning(self, "Lỗi", f"Không thể tạo bản sao lưu:\n{exc}")
 
     def _on_restore_backup(self) -> None:
@@ -259,6 +259,6 @@ class SettingsView(QWidget):
                 "Đã phục hồi dữ liệu thành công.\n\n"
                 "Vui lòng khởi động lại ứng dụng để áp dụng thay đổi.",
             )
-        except Exception as exc:
+        except (RuntimeError, ValueError, OSError) as exc:
             QMessageBox.warning(self, "Lỗi", f"Không thể phục hồi:\n{exc}")
 

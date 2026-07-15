@@ -31,7 +31,11 @@ def test_question_editor_dialog_uses_new_question_fields(monkeypatch, qtbot) -> 
     dlg = QuestionEditorDialog(bank_id=1)
     qtbot.addWidget(dlg)
 
-    assert dlg._type_combo.itemText(dlg._type_combo.count() - 1) == "Essay (tự luận)"
+    assert dlg._formula_preview_group.title() == "Xem trước câu hỏi"
+    assert dlg._formula_preview_toggle.isChecked() is True
+    assert dlg._formula_preview_toggle.text() == "Thu gọn"
+    assert dlg._formula_preview_browser.minimumHeight() >= 280
+    assert dlg._type_combo.itemText(dlg._type_combo.count() - 1) == "Tự luận"
     assert dlg._learning_outcome_combo.count() == 3
     assert dlg._difficulty_combo.itemText(0) == "Nhớ"
 
@@ -63,5 +67,33 @@ def test_question_editor_dialog_loads_clo_and_legacy_difficulty(monkeypatch, qtb
     dlg = QuestionEditorDialog(bank_id=1, question=question)
     qtbot.addWidget(dlg)
 
+    assert dlg._basic_info_toggle.isChecked() is False
+    assert dlg._basic_info_content.isVisible() is False
     assert dlg._learning_outcome_combo.currentData() == "CLO_2"
     assert dlg._difficulty_combo.currentData() == "Vận dụng"
+
+
+def test_question_editor_dialog_renders_formula_preview(monkeypatch, qtbot) -> None:
+    monkeypatch.setattr(
+        QuestionBankFacade,
+        "get_bank_metadata",
+        lambda self, bank_id: _bank_meta(),
+    )
+
+    dlg = QuestionEditorDialog(bank_id=1)
+    qtbot.addWidget(dlg)
+
+    dlg._type_combo.setCurrentIndex(dlg._type_combo.findData("ES"))
+    dlg._content_edit.setPlainText("Xác định $t_{\\alpha; n-1}$ và $H_0$")
+    dlg._hint_edit.setText("Dùng $\\sqrt{n}$ để chuẩn hóa")
+    dlg._explanation_edit.setPlainText("Kết luận với $\\mu_0$")
+    dlg._answers_edit.setText("Đáp án $\\alpha$||Đáp án 2")
+    dlg._refresh_formula_preview()
+
+    html = dlg._formula_preview_browser.toHtml()
+    assert "t_{\\alpha; n-1}" not in html
+    assert "Xác định" in html
+    assert "Dùng" in html
+    assert "Kết luận" in html
+    assert "Đáp án" in html
+    assert "sub" in html or "math" in html

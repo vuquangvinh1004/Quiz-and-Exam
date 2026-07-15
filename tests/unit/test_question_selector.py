@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from core.database.models import Question, QuestionOption
 from modules.quiz_builder.selector import QuestionSelector
 
@@ -54,3 +56,31 @@ def test_build_snapshots_carries_statistics_metadata() -> None:
     assert snapshot["difficulty"] == "easy"
     assert snapshot["learning_outcome_code"] == "CLO_1"
     assert snapshot["category"] == "Chuong 1"
+
+
+def test_build_snapshots_carries_problem_rubric_metadata() -> None:
+    selector = QuestionSelector()
+    q = Question(
+        id=2,
+        bank_id=1,
+        question_type="ES",
+        content="Giải bài toán",
+        difficulty="Phân tích",
+        accepted_answers=json.dumps(
+            {
+                "kind": "problem",
+                "answers": ["Bước 1", "Bước 2"],
+                "rubric": [
+                    {"marker": "B1", "content": "Bước 1", "score": 2.0},
+                    {"marker": "B2", "content": "Bước 2", "score": 4.0},
+                ],
+            }
+        ),
+        is_active=True,
+    )
+
+    snapshot = selector.build_snapshots([q], shuffle_options=False)[0]
+
+    assert snapshot["question_variant"] == "problem"
+    assert snapshot["problem_rubric"][0]["marker"] == "B1"
+    assert snapshot["accepted_answers"] == ["Bước 1", "Bước 2"]

@@ -16,6 +16,7 @@ from modules.quiz_exporter.word_renderer import (
     WordRenderer,
     build_output_path,
 )
+from core.utils.latex_rendering import render_inline_latex_text
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -75,6 +76,82 @@ SA_Q = {
     "hint": "",
     "explanation": "",
     "accepted_answers": ["lực hút của Trái Đất"],
+}
+
+PROBLEM_Q = {
+    "type": "ES",
+    "content": "Giải bài toán kiểm định giả thuyết.",
+    "point_value": 6.0,
+    "difficulty": "Phân tích",
+    "learning_outcome_code": "CLO_4",
+    "category": "Chương 4",
+    "hint": "",
+    "explanation": "",
+    "accepted_answers": ["Nêu giả thuyết", "Tính thống kê kiểm định"],
+    "question_variant": "problem",
+    "problem_rubric": [
+        {"marker": "B1", "content": "Nêu giả thuyết", "score": 2.0},
+        {"marker": "B2", "content": "Tính thống kê kiểm định", "score": 4.0},
+    ],
+}
+
+PROBLEM_Q_TEMPLATE = {
+    **PROBLEM_Q,
+    "problem_template_id": 33,
+    "problem_template_name": "Mẫu kiểm định chuẩn",
+}
+
+PROBLEM_Q_LONG = {
+    "type": "ES",
+    "content": "Giải bài toán dài.",
+    "point_value": 8.0,
+    "difficulty": "Đánh giá",
+    "learning_outcome_code": "CLO_5",
+    "category": "Chương 5",
+    "hint": "",
+    "explanation": "",
+    "accepted_answers": [
+        "Dòng đáp án rất dài thứ nhất",
+        "Dòng đáp án rất dài thứ hai",
+    ],
+    "question_variant": "problem",
+    "problem_rubric": [
+        {
+            "marker": "B1",
+            "content": "Bước 1: Phân tích đề bài rất dài để đảm bảo nội dung đầy đủ trong file đáp án được xuất ra.",
+            "score": 3.0,
+        },
+        {
+            "marker": "B1",
+            "content": "Bước 2: Xuống dòng kiểm tra\nVà vẫn phải hiện đủ nội dung ở ô đáp án mẫu.",
+            "score": 2.0,
+        },
+        {
+            "marker": "B2",
+            "content": "Bước 3: Kết luận cuối cùng và nêu rõ ý nghĩa thống kê của kết quả.",
+            "score": 3.0,
+        },
+    ],
+}
+
+PROBLEM_Q_LATEX = {
+    "type": "ES",
+    "content": "Kiểm tra công thức $t=\\frac{\\bar{x}-\\mu_0}{s/\\sqrt{n}}$ trong bài toán.",
+    "point_value": 5.0,
+    "difficulty": "Phân tích",
+    "learning_outcome_code": "CLO_6",
+    "category": "Chương 6",
+    "hint": "",
+    "explanation": "",
+    "accepted_answers": ["$t=\\frac{\\bar{x}-\\mu_0}{s/\\sqrt{n}}$"],
+    "question_variant": "problem",
+    "problem_rubric": [
+        {
+            "marker": "B1",
+            "content": "Viết $t=\\frac{\\bar{x}-\\mu_0}{s/\\sqrt{n}}$ và kiểm tra điều kiện.",
+            "score": 5.0,
+        },
+    ],
 }
 
 TF_Q = {
@@ -506,6 +583,90 @@ class TestRender:
             assert run.font.size is not None
             assert run.font.size.pt == pytest.approx(12.0)
 
+    def test_problem_question_body_renders_latex(self):
+        cfg = ExportConfig(
+            show_instructions=False,
+            show_answer_sheet=False,
+            show_scoring_rules=False,
+            show_answer_key=False,
+        )
+        doc = self._render(questions=[PROBLEM_Q_LATEX], config=cfg)
+        text = _text(doc)
+        assert "\\frac" not in text
+        assert "\\sqrt" not in text
+        assert "μ₀" in text
+        assert "√" in text
+        assert "x̄" in text or "x̄" in text
+
+    def test_problem_question_instructions_use_problem_label(self):
+        text = _text(self._render(questions=[PROBLEM_Q]))
+        assert "Bài toán (Problem)" in text
+        assert "Câu tự luận (Essay)" not in text
+
+    def test_problem_question_answer_lines_match_rubric_rows(self):
+        cfg = ExportConfig(
+            show_instructions=False,
+            show_answer_sheet=False,
+            show_scoring_rules=False,
+            show_answer_key=False,
+        )
+        doc = self._render(questions=[PROBLEM_Q], config=cfg)
+        line_tables = [table for table in doc.tables if len(table.rows) == len(PROBLEM_Q["problem_rubric"])]
+        assert line_tables, "Expected a ruled answer table matching the rubric row count"
+        for table in line_tables:
+            for row in table.rows:
+                assert row.height is not None
+                assert row.height.inches == pytest.approx(0.3, abs=0.02)
+
+    def test_problem_answer_sheet_uses_single_line(self):
+        cfg = ExportConfig(
+            show_instructions=False,
+            show_answer_sheet=True,
+            show_scoring_rules=False,
+            show_answer_key=False,
+        )
+        doc = self._render(questions=[PROBLEM_Q], config=cfg)
+        text = _text(doc)
+        assert "PHIẾU TRẢ LỜI" in text
+        assert sum(1 for p in doc.paragraphs if p.text.startswith("Câu 1:") and "_" in p.text) == 1
+
+    def test_common_latex_commands_render_readably(self):
+        rendered = render_inline_latex_text(
+            r"$\mathrm{sin}(x)+\cos(x)+\sum x+\int x+\sqrt[n]{x}+\vec{v}+\widehat{AB}+\tilde{y}+\overline{z}+\lim_{n\to\infty}$"
+        )
+        assert "sin(x)" in rendered
+        assert "cos(x)" in rendered
+        assert "∑" in rendered
+        assert "∫" in rendered
+        assert "n√(x)" in rendered or "√(x)" in rendered
+        assert "v⃗" in rendered
+        assert "AB̂" in rendered or "AB̂" in rendered
+        assert "ỹ" in rendered
+        assert "z̄" in rendered
+        assert "lim" in rendered
+        assert "→" in rendered
+
+    def test_latex_environments_render_readably(self):
+        rendered = render_inline_latex_text(
+            r"$f(x)=\begin{cases}x^2 & x<0 \\ x & x\ge 0\end{cases}$"
+        )
+        assert r"\begin" not in rendered
+        assert r"\end" not in rendered
+        assert "x²" in rendered
+        assert "≤" in rendered or ">=" not in rendered
+        assert "if" in rendered
+        matrix = render_inline_latex_text(r"$\begin{pmatrix}1 & 2 \\ 3 & 4\end{pmatrix}$")
+        assert "(" in matrix and ")" in matrix
+        assert "1" in matrix and "4" in matrix
+
+    def test_additional_matrix_environments_render_readably(self):
+        bmatrix = render_inline_latex_text(r"$\begin{bmatrix}1 & 2 \\ 3 & 4\end{bmatrix}$")
+        vmatrix = render_inline_latex_text(r"$\begin{vmatrix}1 & 2 \\ 3 & 4\end{vmatrix}$")
+        Bmatrix = render_inline_latex_text(r"$\begin{Bmatrix}1 & 2 \\ 3 & 4\end{Bmatrix}$")
+        assert "[" in bmatrix and "]" in bmatrix
+        assert "|" in vmatrix
+        assert "⦃" in Bmatrix and "⦄" in Bmatrix
+
 
 # ---------------------------------------------------------------------------
 # Numbering
@@ -574,6 +735,18 @@ class TestAnswerKey:
         text = self._render_key([SA_Q])
         assert "lực hút của Trái Đất" in text
 
+    def test_problem_rubric_in_key(self):
+        text = self._render_key([PROBLEM_Q])
+        assert "Nội dung đáp án" in text
+        assert "B1" in text
+        assert "Tính thống kê kiểm định" in text
+        assert "TỔNG" in text
+        assert "6" in text
+
+    def test_problem_template_name_is_shown_in_answer_key(self):
+        text = self._render_key([PROBLEM_Q_TEMPLATE])
+        assert "Mẫu rubric: Mẫu kiểm định chuẩn" in text
+
     def test_can_render_standalone_answer_key_document(self):
         meta = ExamMeta(exam_title="T")
         cfg = ExportConfig(group_by_type=True, numbering_mode="global")
@@ -582,6 +755,48 @@ class TestAnswerKey:
         assert "ĐÁP ÁN VÀ THANG ĐIỂM" in text
         assert "Câu 1." in text
         assert "Hà Nội" in text
+
+    def test_typed_problem_snapshot_preserves_rubric(self):
+        meta = ExamMeta(exam_title="T")
+        cfg = ExportConfig(
+            show_instructions=False,
+            show_answer_sheet=False,
+            show_scoring_rules=False,
+            show_answer_key=True,
+        )
+        doc = WordRenderer().render([ExportQuestionSnapshot.from_dict(PROBLEM_Q)], meta, cfg)
+        text = _text(doc)
+        assert "B1" in text
+        assert "Nội dung đáp án" in text
+
+    def test_problem_rubric_long_content_is_fully_rendered(self):
+        text = self._render_key([PROBLEM_Q_LONG])
+        assert "Phân tích đề bài rất dài để đảm bảo nội dung đầy đủ" in text
+        assert "Xuống dòng kiểm tra" in text
+        assert "Vẫn phải hiện đủ nội dung ở ô đáp án mẫu." in text or "Và vẫn phải hiện đủ nội dung ở ô đáp án mẫu." in text
+        assert "Kết luận cuối cùng" in text
+
+    def test_problem_rubric_latex_is_rendered_in_key(self):
+        text = self._render_key([PROBLEM_Q_LATEX])
+        assert "\\frac" not in text
+        assert "\\sqrt" not in text
+        assert "μ₀" in text
+        assert "√" in text
+        assert "x̄" in text or "x̄" in text
+
+    def test_problem_rubric_raw_latex_mode_keeps_commands(self):
+        meta = ExamMeta(exam_title="T")
+        cfg = ExportConfig(
+            show_instructions=False,
+            show_answer_sheet=False,
+            show_scoring_rules=False,
+            show_answer_key=True,
+            raw_latex_answer_key=True,
+        )
+        doc = WordRenderer().render([PROBLEM_Q_LATEX], meta, cfg)
+        text = _text(doc)
+        assert "\\frac{\\bar{x}-\\mu_0}{s/\\sqrt{n}}" in text
+        assert "\\alpha" not in text
 
 
 # ---------------------------------------------------------------------------

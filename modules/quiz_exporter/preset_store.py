@@ -29,6 +29,7 @@ class ExportPreset:
     show_question_statistics: bool = False
     show_cover_sheet: bool = False
     split_answer_key_file: bool = False
+    raw_latex_answer_key: bool = False
     watermark_text: str = ""
     watermark_preset: str = "custom"
     cover_sheet_template: str = "standard"

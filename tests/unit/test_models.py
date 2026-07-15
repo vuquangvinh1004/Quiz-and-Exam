@@ -12,6 +12,7 @@ from core.database.models import (
     Question,
     QuestionBank,
     QuestionOption,
+    QuestionRubricTemplate,
     Quiz,
     QuizQuestion,
 )
@@ -63,6 +64,78 @@ class TestQuestion:
 
         fetched = db_session.get(Question, q.id)
         assert fetched.get_accepted_answers() == ["EOQ", "Economic Order Quantity"]
+
+    def test_problem_payload_helpers(self, db_session):
+        bank = QuestionBank(name="BankProblem")
+        db_session.add(bank)
+        db_session.flush()
+
+        q = Question(bank_id=bank.id, question_type="ES", content="Giải bài toán")
+        q.set_accepted_answers(
+            {
+                "kind": "problem",
+                "answers": ["Bước 1", "Bước 2"],
+                "rubric": [
+                    {"marker": "B1", "content": "Bước 1", "score": 1.0},
+                    {"marker": "B2", "content": "Bước 2", "score": 2.0},
+                ],
+            }
+        )
+        db_session.add(q)
+        db_session.flush()
+
+        fetched = db_session.get(Question, q.id)
+        assert fetched.is_problem_question() is True
+        assert fetched.get_accepted_answers() == ["Bước 1", "Bước 2"]
+        assert fetched.get_problem_rubric()[0]["marker"] == "B1"
+        assert fetched.get_problem_template_name() == ""
+        assert fetched.get_problem_template_id() is None
+
+        q.set_accepted_answers(
+            {
+                "kind": "problem",
+                "template_id": 7,
+                "template_name": "Mẫu A",
+                "answers": ["Bước 1"],
+                "rubric": [{"marker": "B1", "content": "Bước 1", "score": 1.0}],
+            }
+        )
+        db_session.flush()
+        assert q.get_problem_template_id() == 7
+        assert q.get_problem_template_name() == "Mẫu A"
+
+    def test_problem_template_serialization(self, db_session):
+        bank = QuestionBank(name="BankTemplate")
+        db_session.add(bank)
+        db_session.flush()
+
+        template = QuestionRubricTemplate(
+            bank_id=bank.id,
+            name="Template A",
+            template_payload="",
+        )
+        template.set_rows(
+            [
+                {"marker": "B1", "content": "Dòng 1", "score": 1.0},
+                {"marker": "", "content": "Dòng 2", "score": 2.0},
+            ]
+        )
+        db_session.add(template)
+        db_session.flush()
+
+        fetched = db_session.get(QuestionRubricTemplate, template.id)
+        rows = fetched.get_rows()
+        assert rows[0]["marker"] == "B1"
+        assert rows[1]["content"] == "Dòng 2"
+
+    def test_invalid_course_learning_outcomes_are_tolerated(self, db_session):
+        bank = QuestionBank(name="BankBadCLO")
+        bank.course_learning_outcomes = "{not-json"
+        db_session.add(bank)
+        db_session.flush()
+
+        fetched = db_session.get(QuestionBank, bank.id)
+        assert fetched.get_course_learning_outcomes() == []
 
     def test_cascade_delete_question_deletes_options(self, db_session):
         bank = QuestionBank(name="BankCascade")

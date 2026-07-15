@@ -26,10 +26,13 @@ from pathlib import Path
 from typing import Optional
 
 from docx import Document
+from docx.enum.table import WD_ROW_HEIGHT_RULE
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 from docx.shared import Pt, Cm, RGBColor, Inches
+
+from core.utils.latex_rendering import render_inline_latex_text
 
 # ---------------------------------------------------------------------------
 # Public data classes
@@ -66,6 +69,7 @@ class ExportConfig:
     group_by_type: bool = True
     show_cover_sheet: bool = False
     split_answer_key_file: bool = False
+    raw_latex_answer_key: bool = False
     watermark_text: str = ""
     watermark_preset: str = "custom"
     cover_sheet_template: str = "standard"
@@ -98,6 +102,10 @@ class ExportQuestionSnapshot:
     explanation: str = ""
     options: list = field(default_factory=list)
     accepted_answers: Optional[list] = None
+    question_variant: str = ""
+    problem_rubric: Optional[list] = None
+    problem_template_id: Optional[int] = None
+    problem_template_name: str = ""
     difficulty: str = ""
     learning_outcome_code: str = ""
     category: str = ""
@@ -112,6 +120,10 @@ class ExportQuestionSnapshot:
             explanation=data.get("explanation") or "",
             options=data.get("options") or [],
             accepted_answers=data.get("accepted_answers"),
+            question_variant=data.get("question_variant") or "",
+            problem_rubric=data.get("problem_rubric"),
+            problem_template_id=data.get("problem_template_id"),
+            problem_template_name=data.get("problem_template_name") or "",
             difficulty=data.get("difficulty") or "",
             learning_outcome_code=data.get("learning_outcome_code") or "",
             category=data.get("category") or "",
@@ -126,6 +138,10 @@ class ExportQuestionSnapshot:
             "explanation": self.explanation,
             "options": self.options,
             "accepted_answers": self.accepted_answers,
+            "question_variant": self.question_variant,
+            "problem_rubric": self.problem_rubric,
+            "problem_template_id": self.problem_template_id,
+            "problem_template_name": self.problem_template_name,
             "difficulty": self.difficulty,
             "learning_outcome_code": self.learning_outcome_code,
             "category": self.category,
@@ -322,6 +338,17 @@ class WordRenderer:
         self._render_header(doc, key_meta, self._build_print_profile(config))
         self._render_answer_key(doc, grouped, config)
         return doc
+
+    @staticmethod
+    def _apply_paragraph_spacing(paragraph, *, before_pt: float = 3.0, after_pt: float = 3.0) -> None:
+        fmt = paragraph.paragraph_format
+        fmt.space_before = Pt(before_pt)
+        fmt.space_after = Pt(after_pt)
+
+    @staticmethod
+    def _render_key_text(text: str, *, raw_latex: bool) -> str:
+        value = str(text or "")
+        return value if raw_latex else render_inline_latex_text(value)
 
     @staticmethod
     def _normalize_questions(
@@ -783,17 +810,29 @@ class WordRenderer:
         types_present = self._types_present(questions)
         if not types_present:
             return
+        has_problem_questions = any(self._is_problem_question(q) for q in questions)
 
         p = doc.add_paragraph("HƯỚNG DẪN LÀM BÀI")
         p.runs[0].bold = True
         p.runs[0].font.size = Pt(12)
         p.runs[0].underline = True
+        self._apply_paragraph_spacing(p)
 
         for qtype in ["MC", "MA", "TF", "BLANK", "SA", "ES"]:
             if qtype in types_present and qtype in _INSTRUCTIONS:
+                if qtype == "ES" and has_problem_questions:
+                    p = doc.add_paragraph(style="List Bullet")
+                    p.add_run(
+                        "Bài toán (Problem): "
+                        "Trình bày lời giải theo hướng dẫn hoặc rubric được yêu cầu."
+                    )
+                    p.runs[0].font.size = Pt(12)
+                    self._apply_paragraph_spacing(p)
+                    continue
                 p = doc.add_paragraph(style="List Bullet")
                 p.add_run(_INSTRUCTIONS[qtype])
                 p.runs[0].font.size = Pt(12)
+                self._apply_paragraph_spacing(p)
 
         doc.add_paragraph("")
 
@@ -826,7 +865,8 @@ class WordRenderer:
         for qtype in order:
             if buckets[qtype]:
                 letter = _SECTION_LETTERS[letter_idx]
-                title = f"Phần {letter}. {_TYPE_LABELS.get(qtype, qtype)}"
+                title_label = self._section_title_label(qtype, buckets[qtype])
+                title = f"Phần {letter}. {title_label}"
                 result.append((letter, title, buckets[qtype]))
                 letter_idx += 1
         return result
@@ -846,6 +886,7 @@ class WordRenderer:
                 run.bold = True
                 run.font.size = Pt(12)
                 run.underline = True
+                self._apply_paragraph_spacing(p)
 
             section_counter = 0
             for q in qs:
@@ -868,7 +909,7 @@ class WordRenderer:
         config: ExportConfig,
     ) -> None:
         qtype = q.get("type", "MC")
-        content = q.get("content", "")
+        content = render_inline_latex_text(str(q.get("content", "")))
         points = q.get("point_value", 1.0)
 
         # Question stem
@@ -876,6 +917,7 @@ class WordRenderer:
         run = p.add_run(f"Câu {number}.")
         run.bold = True
         run.font.size = Pt(12)
+        self._apply_paragraph_spacing(p)
         p.add_run(f" {content}")
         p.runs[-1].font.size = Pt(12)
         if config.show_question_points:
@@ -887,8 +929,13 @@ class WordRenderer:
             self._render_mc_ma_options(doc, q)
         elif qtype == "BLANK":
             self._render_blank_answer_space(doc)
-        elif qtype in ("SA", "ES"):
+        elif qtype == "SA":
             self._render_sa_answer_space(doc)
+        elif qtype == "ES":
+            if self._is_problem_question(q):
+                self._render_problem_answer_space(doc, q)
+            else:
+                self._render_sa_answer_space(doc)
 
     def _render_mc_ma_options(self, doc: Document, q: dict) -> None:
         options = q.get("options", [])
@@ -897,22 +944,46 @@ class WordRenderer:
             run = p.add_run(f"{opt.get('key', '')}. ")
             run.bold = True
             run.font.size = Pt(12)
-            p.add_run(opt.get("text", ""))
+            p.add_run(render_inline_latex_text(str(opt.get("text", ""))))
             p.runs[-1].font.size = Pt(12)
             p.paragraph_format.left_indent = Cm(1.0)
+            self._apply_paragraph_spacing(p)
 
     def _render_blank_answer_space(self, doc: Document) -> None:
         p = doc.add_paragraph("Trả lời: " + "_" * 40)
         p.runs[0].font.size = Pt(12)
         p.paragraph_format.left_indent = Cm(1.0)
+        self._apply_paragraph_spacing(p)
 
     def _render_sa_answer_space(self, doc: Document) -> None:
         p = doc.add_paragraph("Trả lời:")
         p.runs[0].font.size = Pt(12)
+        self._apply_paragraph_spacing(p)
         for _ in range(3):
             p2 = doc.add_paragraph("_" * 80)
             p2.runs[0].font.size = Pt(12)
             p2.paragraph_format.left_indent = Cm(1.0)
+            self._apply_paragraph_spacing(p2)
+
+    def _render_problem_answer_space(self, doc: Document, question: dict) -> None:
+        line_count = self._problem_answer_line_count(question)
+        p = doc.add_paragraph("Trả lời:")
+        p.runs[0].font.size = Pt(12)
+        self._apply_paragraph_spacing(p)
+        table = doc.add_table(rows=line_count, cols=1)
+        table.style = "Table Grid"
+        table.autofit = False
+        self._set_cell_width(table.cell(0, 0), 17.2)
+        for row in table.rows:
+            row.height = Inches(0.3)
+            row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
+            cell = row.cells[0]
+            self._hide_cell_border(cell, "top", "left", "right")
+            cell.paragraphs[0].paragraph_format.space_before = Pt(3)
+            cell.paragraphs[0].paragraph_format.space_after = Pt(3)
+            cell.paragraphs[0].paragraph_format.left_indent = Cm(0.85)
+            cell.paragraphs[0].add_run("")
+        doc.add_paragraph("")
 
     def _render_essay_section(
         self,
@@ -928,6 +999,7 @@ class WordRenderer:
         run.bold = True
         run.font.size = Pt(12)
         run.underline = True
+        self._apply_paragraph_spacing(p)
 
         for eq in essay_questions:
             num = eq.get("number", 1)
@@ -936,15 +1008,17 @@ class WordRenderer:
             run = p.add_run(f"Câu {num}.")
             run.bold = True
             run.font.size = Pt(12)
+            self._apply_paragraph_spacing(p)
             if config.show_question_points:
                 p.add_run(f"  [{score:g} điểm]")
                 p.runs[-1].font.size = Pt(12)
                 p.runs[-1].font.color.rgb = RGBColor(0x80, 0x80, 0x80)
-            # Blank answer lines
+            self._apply_paragraph_spacing(p)
             for _ in range(6):
                 p2 = doc.add_paragraph("_" * 80)
                 p2.runs[0].font.size = Pt(12)
                 p2.paragraph_format.left_indent = Cm(1.0)
+                self._apply_paragraph_spacing(p2)
             doc.add_paragraph("")
 
     # ------------------------------------------------------------------
@@ -962,6 +1036,7 @@ class WordRenderer:
         p.runs[0].bold = True
         p.runs[0].font.size = Pt(13)
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        self._apply_paragraph_spacing(p)
 
         global_counter = 0
         for _letter, title, qs in grouped:
@@ -969,6 +1044,7 @@ class WordRenderer:
                 p = doc.add_paragraph(title)
                 p.runs[0].bold = True
                 p.runs[0].font.size = Pt(12)
+                self._apply_paragraph_spacing(p)
 
             for q in qs:
                 global_counter += 1
@@ -987,6 +1063,7 @@ class WordRenderer:
                         f"Câu {section_num}:  {choices}"
                     )
                     p.runs[0].font.size = Pt(12)
+                    self._apply_paragraph_spacing(p)
 
                 elif qtype == "MA":
                     options = q.get("options", [])
@@ -996,18 +1073,30 @@ class WordRenderer:
                         f"Câu {section_num}:  {choices}"
                     )
                     p.runs[0].font.size = Pt(12)
+                    self._apply_paragraph_spacing(p)
 
-                elif qtype in ("BLANK", "SA", "ES"):
+                elif qtype in ("BLANK", "SA"):
                     p = doc.add_paragraph(
                         f"Câu {section_num}:  " + "_" * 50
                     )
                     p.runs[0].font.size = Pt(12)
+                    self._apply_paragraph_spacing(p)
+                elif qtype == "ES":
+                    if self._is_problem_question(q):
+                        self._render_problem_answer_sheet_line(doc, section_num)
+                    else:
+                        p = doc.add_paragraph(
+                            f"Câu {section_num}:  " + "_" * 50
+                        )
+                        p.runs[0].font.size = Pt(12)
+                        self._apply_paragraph_spacing(p)
 
         # Essay questions — blank answer lines per question
         if config.essay_questions:
             p = doc.add_paragraph("Phần Tự luận")
             p.runs[0].bold = True
             p.runs[0].font.size = Pt(12)
+            self._apply_paragraph_spacing(p)
             for eq in config.essay_questions:
                 num = eq.get("number", 1)
                 score = eq.get("score", 1.0)
@@ -1015,14 +1104,17 @@ class WordRenderer:
                 run = p.add_run(f"Câu {num}.")
                 run.bold = True
                 run.font.size = Pt(11)
+                self._apply_paragraph_spacing(p)
                 if config.show_question_points:
                     p.add_run(f"  [{score:g} điểm]")
                     p.runs[-1].font.size = Pt(11)
                     p.runs[-1].font.color.rgb = RGBColor(0x80, 0x80, 0x80)
+                self._apply_paragraph_spacing(p)
                 for _ in range(6):
                     p2 = doc.add_paragraph("_" * 80)
                     p2.runs[0].font.size = Pt(12)
                     p2.paragraph_format.left_indent = Cm(1.0)
+                    self._apply_paragraph_spacing(p2)
                 doc.add_paragraph("")
 
         doc.add_paragraph("")
@@ -1037,11 +1129,13 @@ class WordRenderer:
         types_present = self._types_present(questions)
         if not types_present:
             return
+        has_problem_questions = any(self._is_problem_question(q) for q in questions)
 
 
         p = doc.add_paragraph("QUY ĐỊNH CHẤM ĐIỂM")
         p.runs[0].bold = True
         p.runs[0].font.size = Pt(13)
+        self._apply_paragraph_spacing(p)
 
         rules: dict[str, str] = {
             "MC": "Mỗi câu Nhiều lựa chọn: chọn đúng 1 đáp án duy nhất mới được điểm; chọn sai hoặc bỏ trống: 0 điểm.",
@@ -1059,17 +1153,23 @@ class WordRenderer:
         for qtype in ["MC", "MA", "TF", "BLANK", "SA", "ES"]:
             if qtype in types_present:
                 p = doc.add_paragraph(style="List Bullet")
-                p.add_run(rules[qtype])
+                if qtype == "ES" and has_problem_questions:
+                    p.add_run("Mỗi câu Bài toán (Problem): chấm theo rubric/thang điểm của giáo viên.")
+                else:
+                    p.add_run(rules[qtype])
                 p.runs[0].font.size = Pt(12)
+                self._apply_paragraph_spacing(p)
 
         if config and config.essay_questions:
             p = doc.add_paragraph(style="List Bullet")
             p.add_run("Câu hỏi tự luận: Chấm theo thang điểm hướng dẫn chi tiết trong đáp án.")
             p.runs[0].font.size = Pt(12)
+            self._apply_paragraph_spacing(p)
 
         p = doc.add_paragraph(f"Tổng điểm toàn bài: {total:g} điểm.")
         p.runs[0].bold = True
         p.runs[0].font.size = Pt(12)
+        self._apply_paragraph_spacing(p)
         doc.add_paragraph("")
 
     # ------------------------------------------------------------------
@@ -1086,6 +1186,7 @@ class WordRenderer:
         p.runs[0].bold = True
         p.runs[0].font.size = Pt(13)
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        self._apply_paragraph_spacing(p)
 
         global_counter = 0
         total = 0.0
@@ -1095,6 +1196,7 @@ class WordRenderer:
                 p = doc.add_paragraph(title)
                 p.runs[0].bold = True
                 p.runs[0].font.size = Pt(12)
+                self._apply_paragraph_spacing(p)
 
             for q in qs:
                 global_counter += 1
@@ -1114,14 +1216,32 @@ class WordRenderer:
                         if o.get("is_correct", False)
                     ]
                     answer_str = ", ".join(correct_keys) if correct_keys else "(chưa có)"
+                    p = doc.add_paragraph(
+                        f"Câu {num}. {answer_str}  —  {points:g} điểm"
+                    )
+                    p.runs[0].font.size = Pt(12)
+                    self._apply_paragraph_spacing(p)
+                elif self._is_problem_question(q):
+                    p = doc.add_paragraph(f"Câu {num}. Bài toán  —  {points:g} điểm")
+                    p.runs[0].font.size = Pt(12)
+                    self._apply_paragraph_spacing(p)
+                    self._render_problem_template_note(doc, q, raw_latex=config.raw_latex_answer_key)
+                    self._render_problem_rubric_answer_key(doc, q, raw_latex=config.raw_latex_answer_key)
                 else:
                     answers = q.get("accepted_answers", [])
-                    answer_str = " / ".join(answers) if answers else "(chưa có)"
-
-                p = doc.add_paragraph(
-                    f"Câu {num}. {answer_str}  —  {points:g} điểm"
-                )
-                p.runs[0].font.size = Pt(12)
+                    answer_str = (
+                        " / ".join(
+                            self._render_key_text(str(answer), raw_latex=config.raw_latex_answer_key)
+                            for answer in answers
+                        )
+                        if answers
+                        else "(chưa có)"
+                    )
+                    p = doc.add_paragraph(
+                        f"Câu {num}. {answer_str}  —  {points:g} điểm"
+                    )
+                    p.runs[0].font.size = Pt(12)
+                    self._apply_paragraph_spacing(p)
 
         doc.add_paragraph("")
 
@@ -1130,6 +1250,7 @@ class WordRenderer:
             p = doc.add_paragraph("Phần Tự luận")
             p.runs[0].bold = True
             p.runs[0].font.size = Pt(12)
+            self._apply_paragraph_spacing(p)
             for eq in config.essay_questions:
                 num = eq.get("number", 1)
                 score = eq.get("score", 1.0)
@@ -1138,12 +1259,124 @@ class WordRenderer:
                     f"Câu {num} (tự luận): Chấm theo thang điểm  —  {score:g} điểm"
                 )
                 p.runs[0].font.size = Pt(12)
+                self._apply_paragraph_spacing(p)
 
         doc.add_paragraph("")
         p = doc.add_paragraph(f"TỔNG ĐIỂM: {total:g} điểm")
         p.runs[0].bold = True
         p.runs[0].font.size = Pt(12)
         p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        self._apply_paragraph_spacing(p)
+
+    @staticmethod
+    def _is_problem_question(question: dict) -> bool:
+        return str(question.get("question_variant") or "").strip() == "problem"
+
+    def _section_title_label(self, qtype: str, questions: list[dict]) -> str:
+        if qtype != "ES":
+            return _TYPE_LABELS.get(qtype, qtype)
+        if any(self._is_problem_question(q) for q in questions):
+            return "Bài toán (Problem)"
+        return _TYPE_LABELS.get(qtype, qtype)
+
+    def _problem_answer_line_count(self, question: dict) -> int:
+        rubric = question.get("problem_rubric") or []
+        count = len(rubric)
+        return count if count > 0 else 6
+
+    def _render_numbered_answer_lines(self, doc: Document, question_number: int, question: dict) -> None:
+        line_count = self._problem_answer_line_count(question)
+        p = doc.add_paragraph(f"Câu {question_number}:")
+        p.runs[0].font.size = Pt(12)
+        table = doc.add_table(rows=line_count, cols=1)
+        table.style = "Table Grid"
+        table.autofit = False
+        self._set_cell_width(table.cell(0, 0), 16.0)
+        for row in table.rows:
+            row.height = Cm(0.6)
+            row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
+            cell = row.cells[0]
+            self._hide_cell_border(cell, "top", "left", "right")
+            cell.paragraphs[0].paragraph_format.space_before = Pt(0)
+            cell.paragraphs[0].paragraph_format.space_after = Pt(0)
+            cell.paragraphs[0].paragraph_format.left_indent = Cm(1.0)
+            cell.paragraphs[0].add_run("")
+        doc.add_paragraph("")
+
+    def _render_problem_rubric_answer_key(self, doc: Document, question: dict, *, raw_latex: bool = False) -> None:
+        rubric = question.get("problem_rubric") or []
+        if not rubric:
+            fallback = doc.add_paragraph("Chấm theo thang điểm/rubric của giáo viên.")
+            fallback.runs[0].font.size = Pt(12)
+            fallback.paragraph_format.left_indent = Cm(1.0)
+            self._apply_paragraph_spacing(fallback)
+            return
+
+        table = doc.add_table(rows=len(rubric) + 2, cols=3)
+        table.style = "Table Grid"
+
+        widths = (2.0, 12.0, 3.0)
+        for row in table.rows:
+            for cell, width in zip(row.cells, widths, strict=False):
+                self._set_cell_width(cell, width)
+
+        headers = ("#", "Nội dung đáp án", "Điểm")
+        for col, text in enumerate(headers):
+            p = table.cell(0, col).paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = p.add_run(text)
+            run.bold = True
+            run.font.size = Pt(12)
+            self._apply_paragraph_spacing(p)
+
+        total_score = 0.0
+        for row_index, row in enumerate(rubric, start=1):
+            marker = str(row.get("marker", "") or "").strip()
+            content = self._render_key_text(str(row.get("content", "") or "").strip(), raw_latex=raw_latex)
+            score = float(row.get("score", 0.0) or 0.0)
+            total_score += score
+            values = (marker, content, self._format_score(score))
+            for col, text in enumerate(values):
+                p = table.cell(row_index, col).paragraphs[0]
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER if col != 1 else WD_ALIGN_PARAGRAPH.LEFT
+                run = p.add_run(text)
+                run.font.size = Pt(12)
+                self._apply_paragraph_spacing(p)
+
+        total_row = len(rubric) + 1
+        summary = ("TỔNG", "", self._format_score(total_score))
+        for col, text in enumerate(summary):
+            p = table.cell(total_row, col).paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = p.add_run(text)
+            run.bold = True
+            run.font.size = Pt(12)
+            self._apply_paragraph_spacing(p)
+        doc.add_paragraph("")
+
+    def _render_problem_answer_sheet_line(self, doc: Document, question_number: int) -> None:
+        p = doc.add_paragraph(f"Câu {question_number}:  " + "_" * 72)
+        p.runs[0].font.size = Pt(12)
+        self._apply_paragraph_spacing(p)
+
+    def _render_problem_template_note(self, doc: Document, question: dict, *, raw_latex: bool = False) -> None:
+        template_name = str(question.get("problem_template_name") or "").strip()
+        template_id = question.get("problem_template_id")
+        if not template_name:
+            if template_id is None:
+                return
+            template_name = f"#{template_id}"
+        p = doc.add_paragraph(f"Mẫu rubric: {self._render_key_text(template_name, raw_latex=raw_latex)}")
+        p.runs[0].italic = True
+        p.runs[0].font.size = Pt(11)
+        p.paragraph_format.left_indent = Cm(1.0)
+        self._apply_paragraph_spacing(p)
+
+    @staticmethod
+    def _format_score(value: float) -> str:
+        if abs(value - round(value)) < 1e-9:
+            return str(int(round(value)))
+        return f"{value:.3f}".rstrip("0").rstrip(".")
 
     def _render_question_statistics(
         self,

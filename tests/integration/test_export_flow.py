@@ -10,6 +10,7 @@ Flow tested:
 """
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 
@@ -105,7 +106,6 @@ def _add_blank(session, bank_id: int) -> Question:
 
 
 def _add_sa(session, bank_id: int) -> Question:
-    import json
     q = Question(
         bank_id=bank_id,
         content="Explain gravity briefly.",
@@ -114,6 +114,36 @@ def _add_sa(session, bank_id: int) -> Question:
         point_value=3.0,
         is_active=True,
         accepted_answers=json.dumps(["gravitational force"]),
+        case_sensitive=False,
+        trim_whitespace=True,
+    )
+    session.add(q)
+    session.flush()
+    return q
+
+
+def _add_problem(session, bank_id: int) -> Question:
+    q = Question(
+        bank_id=bank_id,
+        content="Solve the hypothesis-testing problem.",
+        question_type="ES",
+        difficulty="Phân tích",
+        point_value=6.0,
+        is_active=True,
+        accepted_answers=json.dumps(
+            {
+                "kind": "problem",
+                "answers": ["State hypotheses", "Compute the test statistic"],
+                "rubric": [
+                    {"marker": "B1", "content": "State hypotheses", "score": 2.0},
+                    {
+                        "marker": "B2",
+                        "content": "Compute the test statistic",
+                        "score": 4.0,
+                    },
+                ],
+            }
+        ),
         case_sensitive=False,
         trim_whitespace=True,
     )
@@ -230,6 +260,40 @@ class TestExportFlow:
         snap = snaps[0]
         assert snap["type"] == "BLANK"
         assert "Hà Nội" in snap["accepted_answers"] or "Ha Noi" in snap["accepted_answers"]
+
+    def test_snapshot_problem_carries_rubric_metadata(self, mem_session, bank):
+        _add_problem(mem_session, bank.id)
+        mem_session.flush()
+
+        selector = QuestionSelector()
+        orm_qs = selector.select(mem_session, bank.id, count=1, shuffle=False)
+        snaps = selector.build_snapshots(orm_qs, shuffle_options=False)
+
+        snap = snaps[0]
+        assert snap["type"] == "ES"
+        assert snap["question_variant"] == "problem"
+        assert snap["problem_rubric"][0]["marker"] == "B1"
+
+    def test_problem_answer_key_export_includes_rubric(self, mem_session, bank):
+        _add_problem(mem_session, bank.id)
+        mem_session.flush()
+
+        selector = QuestionSelector()
+        orm_qs = selector.select(mem_session, bank.id, count=1, shuffle=False)
+        snaps = selector.build_snapshots(orm_qs, shuffle_options=False)
+
+        meta = ExamMeta(exam_title="Problem Key")
+        config = ExportConfig(show_answer_key=True, group_by_type=True)
+        doc = WordRenderer().render_answer_key_document(snaps, meta, config)
+
+        with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+
+        try:
+            doc.save(str(tmp_path))
+            assert tmp_path.stat().st_size > 0
+        finally:
+            tmp_path.unlink(missing_ok=True)
 
     def test_export_with_minimal_config(self, mem_session, bank):
         """All optional sections disabled — export should still succeed."""

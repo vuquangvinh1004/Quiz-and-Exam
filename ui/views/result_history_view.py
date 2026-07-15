@@ -238,7 +238,7 @@ class ResultHistoryView(QWidget):
         try:
             from modules.google_sheets.pending_queue import PendingGSheetsQueue
             n = PendingGSheetsQueue().count()
-        except Exception:
+        except (ImportError, RuntimeError, ValueError, OSError):
             n = 0
         self._set_pending_count_label(n)
 
@@ -347,7 +347,7 @@ class ResultHistoryView(QWidget):
             return
         try:
             data = self._history_facade.get_attempt_detail(attempt_id)
-        except Exception as exc:
+        except (RuntimeError, ValueError, OSError) as exc:
             show_warning_error(self, "Lỗi", "Không thể tải chi tiết.", exc=exc)
             return
         if data is None:
@@ -373,7 +373,7 @@ class ResultHistoryView(QWidget):
             return
         try:
             self._history_facade.delete_attempt(attempt_id)
-        except Exception as exc:
+        except (RuntimeError, ValueError, OSError) as exc:
             show_warning_error(self, "Lỗi", "Không thể xóa bài làm.", exc=exc)
             return
         self.refresh()

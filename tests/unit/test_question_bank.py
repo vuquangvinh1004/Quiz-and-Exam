@@ -10,6 +10,7 @@ import pytest
 
 from core.domain.services.question_service import (
     BankStats,
+    ProblemRubricRow,
     QuestionEditData,
     QuestionService,
 )
@@ -441,6 +442,29 @@ class TestQuestionCreate:
         answers = json.loads(q.accepted_answers)
         assert "4" in answers
 
+    def test_create_problem_question(self, session, svc, bank):
+        data = QuestionEditData(
+            bank_id=bank.id,
+            question_type=QuestionType.ESSAY,
+            content="Giải bài toán kiểm định",
+            difficulty="Phân tích",
+            score=6.0,
+            accepted_answers=["Nêu giả thuyết", "Tính thống kê"],
+            editor_variant="problem",
+            problem_rubric=[
+                ProblemRubricRow(marker="B1", content="Nêu giả thuyết", score=2.0),
+                ProblemRubricRow(marker="B2", content="Tính thống kê", score=4.0),
+            ],
+        )
+
+        q = svc.create_question(session, data)
+        payload = json.loads(q.accepted_answers)
+
+        assert q.question_type == "ES"
+        assert payload["kind"] == "problem"
+        assert payload["rubric"][0]["marker"] == "B1"
+        assert q.is_problem_question() is True
+
     def test_create_question_with_learning_outcome_code(self, session, svc):
         bank = svc.create_bank(
             session,
@@ -497,6 +521,20 @@ class TestQuestionValidation:
         data = _sa_data(bank.id)
         data.accepted_answers = []
         with pytest.raises(ValueError, match="đáp án"):
+            svc.create_question(session, data)
+
+    def test_problem_needs_rubric_rows(self, session, svc, bank):
+        data = QuestionEditData(
+            bank_id=bank.id,
+            question_type=QuestionType.ESSAY,
+            content="Bài toán",
+            difficulty="Phân tích",
+            score=6.0,
+            editor_variant="problem",
+            problem_rubric=[],
+        )
+
+        with pytest.raises(ValueError, match="bài toán"):
             svc.create_question(session, data)
 
     def test_zero_score_raises(self, session, svc, bank):
