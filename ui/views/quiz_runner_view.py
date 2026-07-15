@@ -98,7 +98,7 @@ class QuizRunnerView(
             self._setup_cb_tf,
             self._setup_cb_blank,
             self._setup_cb_sa,
-            self._setup_cb_es,
+            self._setup_cb_crq,
             *self._setup_difficulty_cbs,
         ):
             cb.stateChanged.connect(self._update_setup_available_count)

@@ -10,7 +10,7 @@ Business rules enforced (ARCHITECTURE §5.4, §7.5):
             For multi-blank questions (blank_count > 1), the user separates
             answers with "||" and each part is matched positionally.
     SA    : identical grading logic to BLANK (separate class for clarity).
-    ES    : identical grading logic to SA/BLANK (separate class for clarity).
+    ES/PR : identical grading logic to SA/BLANK (separate class for clarity).
     TF    : identical to MC with exactly one correct option.
 
 Normalisation rules applied when trimming/casing flags are set:
@@ -189,7 +189,7 @@ class SAEvaluator:
 
 
 class EssayEvaluator:
-    """Evaluator for Essay questions.
+    """Evaluator for Essay / CRQ questions.
 
     Kept separate from Short Answer for future rubric-based scoring, but
     currently shares the same exact-answer workflow.
@@ -256,7 +256,7 @@ class GradingEngine:
         if qtype == "TF":
             return TrueFalseEvaluator.grade(qq_dict.get("options", []), payload, point)
 
-        if qtype in ("BLANK", "SA", "ES"):
+        if qtype in ("BLANK", "SA", "ES", "PR"):
             acc = qq_dict.get("accepted_answers", [])
             cs = qq_dict.get("case_sensitive", False)
             tw = qq_dict.get("trim_whitespace", True)
@@ -270,7 +270,7 @@ class GradingEngine:
                     point_value=point,
                     blank_count=blank_count,
                 )
-            if qtype == "ES":
+            if qtype in ("ES", "PR"):
                 return EssayEvaluator.grade(
                     accepted=acc,
                     case_sensitive=cs,

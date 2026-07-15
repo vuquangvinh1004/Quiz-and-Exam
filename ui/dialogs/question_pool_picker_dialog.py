@@ -41,9 +41,10 @@ _TYPE_LABEL = {
     "BLANK": "Blank",
     "SA": "SA",
     "ES": "ES",
+    "PR": "PR",
 }
 
-_TYPE_ORDER = ("MC", "MA", "TF", "BLANK", "SA", "ES")
+_TYPE_ORDER = ("MC", "MA", "TF", "BLANK", "SA", "ES", "PR")
 
 _DIFFICULTY_LABELS = ("Nhớ", "Hiểu", "Vận dụng", "Phân tích", "Đánh giá", "Sáng tạo")
 _DIFFICULTY_MAP = {

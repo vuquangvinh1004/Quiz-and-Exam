@@ -600,8 +600,8 @@ class TestRender:
 
     def test_problem_question_instructions_use_problem_label(self):
         text = _text(self._render(questions=[PROBLEM_Q]))
-        assert "Bài toán (Problem)" in text
-        assert "Câu tự luận (Essay)" not in text
+        assert "CRQ - Bài toán (Problem)" in text
+        assert "Câu CRQ - Tự luận (Essay)" not in text
 
     def test_problem_question_answer_lines_match_rubric_rows(self):
         cfg = ExportConfig(
@@ -618,7 +618,7 @@ class TestRender:
                 assert row.height is not None
                 assert row.height.inches == pytest.approx(0.3, abs=0.02)
 
-    def test_problem_answer_sheet_uses_single_line(self):
+    def test_problem_answer_sheet_is_hidden_for_crq_only(self):
         cfg = ExportConfig(
             show_instructions=False,
             show_answer_sheet=True,
@@ -627,8 +627,21 @@ class TestRender:
         )
         doc = self._render(questions=[PROBLEM_Q], config=cfg)
         text = _text(doc)
+        assert "PHIẾU TRẢ LỜI" not in text
+
+    def test_answer_sheet_for_mixed_questions_skips_crq(self):
+        cfg = ExportConfig(
+            show_instructions=False,
+            show_answer_sheet=True,
+            show_scoring_rules=False,
+            show_answer_key=False,
+        )
+        doc = self._render(questions=[MC_Q, PROBLEM_Q], config=cfg)
+        text = _text(doc)
         assert "PHIẾU TRẢ LỜI" in text
-        assert sum(1 for p in doc.paragraphs if p.text.startswith("Câu 1:") and "_" in p.text) == 1
+        assert "○ A" in text
+        assert "Bài toán kiểm định giả thuyết." in text
+        assert text.count("PHIẾU TRẢ LỜI") == 1
 
     def test_common_latex_commands_render_readably(self):
         rendered = render_inline_latex_text(

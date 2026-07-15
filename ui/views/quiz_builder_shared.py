@@ -13,6 +13,7 @@ _TYPE_SHORT_LABELS = {
     "BLANK": "Blank",
     "SA": "SA",
     "ES": "ES",
+    "PR": "PR",
 }
 
 

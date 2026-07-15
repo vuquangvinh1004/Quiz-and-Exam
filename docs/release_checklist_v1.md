@@ -24,6 +24,7 @@
 - [ ] Xóa ngân hàng (có confirmation)
 - [ ] Xem danh sách câu hỏi trong ngân hàng
 - [ ] Thêm câu hỏi thủ công (MC, MA, BLANK, SA)
+- [ ] Thêm câu hỏi CRQ với subtype `Tự luận` và `Bài toán`
 - [ ] Sửa câu hỏi
 - [ ] Xóa câu hỏi (có confirmation)
 - [ ] Tìm kiếm full-text hoạt động
@@ -33,6 +34,12 @@
 - [ ] Tạo quiz với chế độ Kiểm tra
 - [ ] Tạo quiz với chế độ Luyện tập
 - [ ] Tạo quiz với chế độ Học tập
+- [ ] Xuất đề Word với loại đề `Trắc nghiệm`
+- [ ] Xuất đề Word với loại đề `CRQ`
+- [ ] Xuất đề Word với loại đề `Hỗn hợp`
+- [ ] CRQ nằm cuối đề và được đánh số lại từ 1
+- [ ] CRQ-only không tạo phiếu trả lời riêng
+- [ ] Mixed mode chỉ tạo phiếu trả lời cho câu trắc nghiệm
 - [ ] Không tạo được quiz khi thiếu câu hỏi
 - [ ] Không tạo được quiz thiếu cấu hình bắt buộc
 - [ ] Chế độ Học tập bắt buộc không có thời gian
@@ -69,6 +76,7 @@
 - [ ] Tạo backup thành công
 - [ ] Restore từ backup với confirmation
 - [ ] Sau restore app báo "cần restart"
+- [ ] Mẫu xuất đề cũ `Trắc nghiệm + CRQ` được tự động chuẩn hóa thành `Hỗn hợp`
 
 ---
 

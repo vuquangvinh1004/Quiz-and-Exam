@@ -1,4 +1,4 @@
-"""Dialog for creating/editing problem-style essay questions with a rubric table."""
+"""Dialog for creating/editing CRQ questions with a rubric table."""
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QPoint, Qt
@@ -45,6 +45,18 @@ _LEVEL_DEFAULT_SCORES: dict[str, float] = {
     "Phân tích": 6.0,
     "Đánh giá": 8.0,
     "Sáng tạo": 10.0,
+}
+_CRQ_TYPES: tuple[tuple[QuestionType, str], ...] = (
+    (QuestionType.ESSAY, "Tự luận"),
+    (QuestionType.PROBLEM, "Bài toán"),
+)
+_CRQ_TYPE_TO_VARIANT: dict[QuestionType, str] = {
+    QuestionType.ESSAY: "essay",
+    QuestionType.PROBLEM: "problem",
+}
+_CRQ_VARIANT_TO_TYPE: dict[str, QuestionType] = {
+    "essay": QuestionType.ESSAY,
+    "problem": QuestionType.PROBLEM,
 }
 _WARNING_ICON = "&#9888;"
 _CONTINUATION_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -268,7 +280,7 @@ class _ProblemTemplateSaveDialog(QDialog):
 
 
 class ProblemEditorDialog(QDialog):
-    """Modal dialog specialized for problem-bank entries."""
+    """Modal dialog specialized for CRQ entries."""
 
     def __init__(
         self,
@@ -287,7 +299,7 @@ class ProblemEditorDialog(QDialog):
         self._problem_template_id: int | None = None
         self._problem_template_name: str = ""
 
-        self.setWindowTitle("Thêm bài toán" if question is None else "Sửa bài toán")
+        self.setWindowTitle("Thêm CRQ" if question is None else "Sửa CRQ")
         self.setMinimumSize(940, 680)
         self._build_ui()
 
@@ -320,14 +332,20 @@ class ProblemEditorDialog(QDialog):
             basic_layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
 
             self._content_edit = QTextEdit()
-            self._content_edit.setPlaceholderText("Nhập nội dung bài toán...")
+            self._crq_type_combo = QComboBox()
+            for qt, label in _CRQ_TYPES:
+                self._crq_type_combo.addItem(label, userData=qt)
+            self._crq_type_combo.currentIndexChanged.connect(self._refresh_formula_preview)
+            basic_layout.addRow("Loại CRQ *:", self._crq_type_combo)
+
+            self._content_edit.setPlaceholderText("Nhập nội dung CRQ...")
             self._content_edit.setFixedHeight(110)
             self._content_edit.textChanged.connect(self._refresh_formula_preview)
             basic_layout.addRow("Nội dung *:", self._content_edit)
 
             self._code_edit = QLineEdit()
             self._code_edit.setPlaceholderText("Tự động nếu để trống")
-            basic_layout.addRow("Mã bài toán:", self._code_edit)
+            basic_layout.addRow("Mã CRQ:", self._code_edit)
 
             self._learning_outcome_combo = QComboBox()
             self._learning_outcome_combo.addItem("Không gắn CLO", userData="")
@@ -418,7 +436,7 @@ class ProblemEditorDialog(QDialog):
             "QTextBrowser .math { font-weight: 600; }"
         )
         question_preview_content_layout.addWidget(self._question_preview_browser)
-        question_preview_hint = QLabel("Hiển thị nhanh nội dung bài toán đang nhập.")
+        question_preview_hint = QLabel("Hiển thị nhanh nội dung CRQ đang nhập.")
         question_preview_hint.setStyleSheet("color: #666;")
         question_preview_hint.setWordWrap(True)
         question_preview_content_layout.addWidget(question_preview_hint)
@@ -811,7 +829,7 @@ class ProblemEditorDialog(QDialog):
 
         if total > self._score_spin.value():
             self._rubric_warning_lbl.setText(
-                f"{_WARNING_ICON} Tổng điểm đáp án đang lớn hơn điểm của bài toán."
+                f"{_WARNING_ICON} Tổng điểm đáp án đang lớn hơn điểm của CRQ."
             )
             self._rubric_warning_lbl.show()
         else:
@@ -853,12 +871,12 @@ class ProblemEditorDialog(QDialog):
             ".math { font-weight: 600; color: #111827; }",
             "</style></head><body>",
             "<div class='block'>",
-            "<div class='title'>Nội dung bài toán</div>",
+            "<div class='title'>Nội dung CRQ</div>",
         ]
         if content:
             question_html_parts.append(f"<div class='content'>{render_inline_latex_html(content)}</div>")
         else:
-            question_html_parts.append("<div class='empty'>Chưa nhập nội dung bài toán.</div>")
+            question_html_parts.append("<div class='empty'>Chưa nhập nội dung CRQ.</div>")
         question_html_parts.append("</div></body></html>")
         self._question_preview_browser.setHtml("".join(question_html_parts))
 
@@ -926,6 +944,11 @@ class ProblemEditorDialog(QDialog):
     def _load_question(self, question: Question) -> None:
         self._problem_template_id = question.get_problem_template_id()
         self._problem_template_name = question.get_problem_template_name()
+        subtype = question.get_crq_subtype()
+        if subtype:
+            idx = self._crq_type_combo.findData(_CRQ_VARIANT_TO_TYPE.get(subtype))
+            if idx >= 0:
+                self._crq_type_combo.setCurrentIndex(idx)
         self._content_edit.setPlainText(question.content or "")
         self._code_edit.setText(question.question_code or "")
         clo_idx = self._learning_outcome_combo.findData(question.learning_outcome_code or "")
@@ -954,8 +977,8 @@ class ProblemEditorDialog(QDialog):
             self._syncing_rubric = False
 
         rubric = []
-        if question.is_problem_question():
-            rubric = question.get_problem_rubric()
+        if question.is_crq_question():
+            rubric = question.get_crq_rubric()
         elif question.accepted_answers:
             rubric = [
                 {"marker": "", "content": answer, "score": 0.0}
@@ -1011,7 +1034,7 @@ class ProblemEditorDialog(QDialog):
 
         data = QuestionEditData(
             bank_id=self._bank_id,
-            question_type=QuestionType.ESSAY,
+            question_type=self._crq_type_combo.currentData() or QuestionType.ESSAY,
             content=self._content_edit.toPlainText(),
             difficulty=str(self._difficulty_combo.currentData() or "Vận dụng"),
             score=self._score_spin.value(),
@@ -1021,7 +1044,10 @@ class ProblemEditorDialog(QDialog):
             status=self._status_combo.currentData() or QuestionStatus.ACTIVE.value,
             question_code=self._code_edit.text(),
             accepted_answers=[row.content for row in rubric_rows if row.content],
-            editor_variant="problem",
+            editor_variant=_CRQ_TYPE_TO_VARIANT.get(
+                self._crq_type_combo.currentData(),
+                "essay",
+            ),
             problem_rubric=rubric_rows,
             problem_template_id=self._problem_template_id,
             problem_template_name=self._problem_template_name,
@@ -1037,7 +1063,7 @@ class ProblemEditorDialog(QDialog):
         except ValueError as exc:
             QMessageBox.warning(self, "Lỗi nhập liệu", str(exc))
         except Exception as exc:
-            QMessageBox.critical(self, "Lỗi lưu", f"Không thể lưu bài toán:\n{exc}")
+            QMessageBox.critical(self, "Lỗi lưu", f"Không thể lưu CRQ:\n{exc}")
 
     def _collect_rubric_rows(self) -> list[ProblemRubricRow]:
         rows: list[ProblemRubricRow] = []
@@ -1048,7 +1074,7 @@ class ProblemEditorDialog(QDialog):
             if not marker and not content and not score_text:
                 continue
             if not content:
-                raise ValueError("Mỗi dòng đáp án của bài toán cần có nội dung đáp án.")
+                raise ValueError("Mỗi dòng đáp án của CRQ cần có nội dung đáp án.")
             score = self._parse_score_text(score_text)
             if score is None:
                 raise ValueError("Điểm trong bảng đáp án phải là số hợp lệ.")

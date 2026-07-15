@@ -56,6 +56,8 @@ class QuestionService:
         QuestionType.SHORT_ANSWER.value: ("Vận dụng", "Phân tích", "Đánh giá"),
         QuestionType.ESSAY: ("Phân tích", "Đánh giá", "Sáng tạo"),
         QuestionType.ESSAY.value: ("Phân tích", "Đánh giá", "Sáng tạo"),
+        QuestionType.PROBLEM: ("Phân tích", "Đánh giá", "Sáng tạo"),
+        QuestionType.PROBLEM.value: ("Phân tích", "Đánh giá", "Sáng tạo"),
     }
 
     def list_banks(self, session: Session) -> list[QuestionBank]:

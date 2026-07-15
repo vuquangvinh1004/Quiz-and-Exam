@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 _LEGACY_QUESTION_TYPE_CONSTRAINT = "question_type IN ('MC', 'MA', 'BLANK', 'SA')"
-_CURRENT_QUESTION_TYPE_CONSTRAINT = "question_type IN ('MC', 'MA', 'BLANK', 'TF', 'SA', 'ES')"
+_CURRENT_QUESTION_TYPE_CONSTRAINT = "question_type IN ('MC', 'MA', 'BLANK', 'TF', 'SA', 'ES', 'PR')"
 
 
 def repair_questions_type_constraint(db_path: Path) -> bool:

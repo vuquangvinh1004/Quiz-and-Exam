@@ -34,9 +34,17 @@ class QuizRunnerSetupMixin:
             self._setup_cb_tf: "TF",
             self._setup_cb_blank: "BLANK",
             self._setup_cb_sa: "SA",
-            self._setup_cb_es: "ES",
+            self._setup_cb_crq: "CRQ",
         }
-        return [v for cb, v in mapping.items() if cb.isChecked()]
+        selected: list[str] = []
+        for cb, code in mapping.items():
+            if not cb.isChecked():
+                continue
+            if code == "CRQ":
+                selected.extend(["ES", "PR"])
+            else:
+                selected.append(code)
+        return selected
 
     def _setup_selected_difficulties(self) -> list[str]:
         return [cb.text() for cb in self._setup_difficulty_cbs if cb.isChecked()]

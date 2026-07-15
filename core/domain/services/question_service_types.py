@@ -95,6 +95,8 @@ class QuestionTypeBreakdown:
     tf: int = 0
     sa: int = 0
     es: int = 0
+    pr: int = 0
+    crq: int = 0
 
 
 @dataclass

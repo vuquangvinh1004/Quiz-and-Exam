@@ -25,8 +25,10 @@ from core.domain.services.question_service_types import (
 )
 from core.utils.constants import (
     BLANK_PLACEHOLDER,
+    CRQ_QUESTION_TYPES,
     DEFAULT_DIFFICULTY,
     QuestionType,
+    is_crq_question_type,
 )
 from core.utils.validators import count_blank_placeholders
 
@@ -114,6 +116,9 @@ class QuestionAnalyticsService:
             tf=counts.get(QuestionType.TRUE_FALSE.value, 0),
             sa=counts.get(QuestionType.SHORT_ANSWER.value, 0),
             es=counts.get(QuestionType.ESSAY.value, 0),
+            pr=counts.get(QuestionType.PROBLEM.value, 0),
+            crq=counts.get(QuestionType.ESSAY.value, 0)
+            + counts.get(QuestionType.PROBLEM.value, 0),
         )
 
     @staticmethod
@@ -204,6 +209,10 @@ class QuestionAnalyticsService:
                 breakdown.sa += 1
             elif row.question_type == QuestionType.ESSAY.value:
                 breakdown.es += 1
+            elif row.question_type == QuestionType.PROBLEM.value:
+                breakdown.pr += 1
+            if is_crq_question_type(row.question_type):
+                breakdown.crq += 1
             level = cls._canonical_difficulty_label(row.difficulty)
             if level:
                 difficulty_counts[level] += 1
@@ -430,7 +439,14 @@ class QuestionQueryService:
                 )
             )
         if question_type:
-            q = q.filter(Question.question_type == question_type)
+            if question_type == "CRQ":
+                q = q.filter(
+                    Question.question_type.in_(
+                        [qt.value for qt in CRQ_QUESTION_TYPES]
+                    )
+                )
+            else:
+                q = q.filter(Question.question_type == question_type)
         if difficulty:
             q = q.filter(Question.difficulty.in_(QuestionQueryService._difficulty_filter_values(difficulty)))
         if active_only:
@@ -534,26 +550,25 @@ class QuestionMutationService:
         elif data.question_type in (
             QuestionType.BLANK,
             QuestionType.SHORT_ANSWER,
-            QuestionType.ESSAY,
         ):
-            if data.editor_variant == QuestionMutationService._PROBLEM_VARIANT:
-                QuestionMutationService._validate_problem_rubric(data)
-            elif not any(a.strip() for a in data.accepted_answers):
+            if not any(a.strip() for a in data.accepted_answers):
                 raise ValueError("Cần ít nhất một đáp án chấp nhận được.")
             if data.question_type == QuestionType.BLANK:
                 if count_blank_placeholders(data.content) == 0:
                     raise ValueError(
                         f"Câu hỏi BLANK phải chứa ít nhất một {BLANK_PLACEHOLDER} trong nội dung."
                     )
+        elif data.question_type in CRQ_QUESTION_TYPES:
+            QuestionMutationService._validate_crq_rubric(data)
 
     @staticmethod
-    def _validate_problem_rubric(data: QuestionEditData) -> None:
-        rubric_rows = QuestionMutationService._clean_problem_rubric(data.problem_rubric)
+    def _validate_crq_rubric(data: QuestionEditData) -> None:
+        rubric_rows = QuestionMutationService._clean_crq_rubric(data.problem_rubric)
         if not rubric_rows:
-            raise ValueError("Cần ít nhất một dòng đáp án chấp nhận cho bài toán.")
+            raise ValueError("Cần ít nhất một dòng đáp án chấp nhận cho CRQ.")
 
     @staticmethod
-    def _clean_problem_rubric(rows: list[ProblemRubricRow]) -> list[ProblemRubricRow]:
+    def _clean_crq_rubric(rows: list[ProblemRubricRow]) -> list[ProblemRubricRow]:
         clean_rows: list[ProblemRubricRow] = []
         for row in rows:
             marker = str(row.marker or "").strip()
@@ -571,28 +586,42 @@ class QuestionMutationService:
         return clean_rows
 
     @staticmethod
+    def _resolve_crq_subtype(data: QuestionEditData) -> str:
+        variant = str(getattr(data, "editor_variant", "") or "").strip().lower()
+        if variant in {"essay", "problem"}:
+            return variant
+        if data.question_type == QuestionType.PROBLEM:
+            return "problem"
+        return "essay"
+
+    @staticmethod
+    def _serialize_crq_payload(data: QuestionEditData) -> dict[str, object]:
+        rubric_rows = QuestionMutationService._clean_crq_rubric(data.problem_rubric)
+        payload: dict[str, object] = {
+            "kind": "crq",
+            "subtype": QuestionMutationService._resolve_crq_subtype(data),
+            "answers": [row.content for row in rubric_rows if row.content],
+            "rubric": [
+                {
+                    "marker": row.marker,
+                    "content": row.content,
+                    "score": row.score,
+                }
+                for row in rubric_rows
+            ],
+        }
+        template_name = str(getattr(data, "problem_template_name", "") or "").strip()
+        template_id = getattr(data, "problem_template_id", None)
+        if template_name:
+            payload["template_name"] = template_name
+        if template_id is not None:
+            payload["template_id"] = template_id
+        return payload
+
+    @staticmethod
     def _serialize_accepted_answers_payload(data: QuestionEditData) -> list[str] | dict[str, object]:
-        if data.editor_variant == QuestionMutationService._PROBLEM_VARIANT:
-            rubric_rows = QuestionMutationService._clean_problem_rubric(data.problem_rubric)
-            payload: dict[str, object] = {
-                "kind": QuestionMutationService._PROBLEM_VARIANT,
-                "answers": [row.content for row in rubric_rows if row.content],
-                "rubric": [
-                    {
-                        "marker": row.marker,
-                        "content": row.content,
-                        "score": row.score,
-                    }
-                    for row in rubric_rows
-                ],
-            }
-            template_name = str(getattr(data, "problem_template_name", "") or "").strip()
-            template_id = getattr(data, "problem_template_id", None)
-            if template_name:
-                payload["template_name"] = template_name
-            if template_id is not None:
-                payload["template_id"] = template_id
-            return payload
+        if data.question_type in CRQ_QUESTION_TYPES:
+            return QuestionMutationService._serialize_crq_payload(data)
         return [a.strip() for a in data.accepted_answers if a.strip()]
 
     @staticmethod
@@ -619,6 +648,7 @@ class QuestionMutationService:
             QuestionType.BLANK,
             QuestionType.SHORT_ANSWER,
             QuestionType.ESSAY,
+            QuestionType.PROBLEM,
         ):
             q.accepted_answers = json.dumps(
                 QuestionMutationService._serialize_accepted_answers_payload(data),
@@ -646,6 +676,7 @@ class QuestionMutationService:
             QuestionType.BLANK,
             QuestionType.SHORT_ANSWER,
             QuestionType.ESSAY,
+            QuestionType.PROBLEM,
         ):
             q.accepted_answers = json.dumps(
                 QuestionMutationService._serialize_accepted_answers_payload(data),

@@ -18,7 +18,7 @@ def test_save_and_load_preset_roundtrip(tmp_path) -> None:
         subject="Quan tri hoc",
         course_code="MGT101",
         exam_title="Kiem tra giua ky",
-        exam_type="Trắc nghiệm + Tự luận",
+        exam_type="Hỗn hợp",
         numbering_mode="per_section",
         group_by_type=False,
         show_instructions=True,
@@ -33,6 +33,26 @@ def test_save_and_load_preset_roundtrip(tmp_path) -> None:
     loaded = store.load_preset("Giua ky Khoa QTKD")
 
     assert loaded == preset
+
+
+def test_legacy_exam_type_is_normalized_when_loading(tmp_path) -> None:
+    store = ExportPresetStore(tmp_path / "presets")
+    path = store._path_for_name("Legacy preset")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "name": "Legacy preset",
+                "exam_type": "Trắc nghiệm + CRQ",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = store.load_preset("Legacy preset")
+
+    assert loaded.exam_type == "Hỗn hợp"
 
 
 def test_list_presets_returns_display_names(tmp_path) -> None:

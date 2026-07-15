@@ -24,7 +24,7 @@ _QUESTION_TYPE_LABELS = {
     "TF": "Đúng/Sai",
     "BLANK": "Điền vào chỗ trống",
     "SA": "Trả lời ngắn",
-    "ES": "Tự luận",
+    "CRQ": "CRQ",
 }
 
 _DIFFICULTY_LEVELS = ("Nhớ", "Hiểu", "Vận dụng", "Phân tích", "Đánh giá", "Sáng tạo")
@@ -83,14 +83,14 @@ def build_setup_panel(view) -> QWidget:
     view._setup_cb_tf = QCheckBox(_QUESTION_TYPE_LABELS["TF"])
     view._setup_cb_blank = QCheckBox(_QUESTION_TYPE_LABELS["BLANK"])
     view._setup_cb_sa = QCheckBox(_QUESTION_TYPE_LABELS["SA"])
-    view._setup_cb_es = QCheckBox(_QUESTION_TYPE_LABELS["ES"])
+    view._setup_cb_crq = QCheckBox(_QUESTION_TYPE_LABELS["CRQ"])
     apply_checkbox_style(
         view._setup_cb_mc,
         view._setup_cb_ma,
         view._setup_cb_tf,
         view._setup_cb_blank,
         view._setup_cb_sa,
-        view._setup_cb_es,
+        view._setup_cb_crq,
     )
     for cb in (
         view._setup_cb_mc,
@@ -98,7 +98,7 @@ def build_setup_panel(view) -> QWidget:
         view._setup_cb_tf,
         view._setup_cb_blank,
         view._setup_cb_sa,
-        view._setup_cb_es,
+        view._setup_cb_crq,
     ):
         cb.setChecked(True)
         types_row.addWidget(cb)

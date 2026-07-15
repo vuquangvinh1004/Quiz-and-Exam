@@ -146,14 +146,20 @@ class QuestionSelector:
             else:
                 snap["options"] = []
                 snap["accepted_answers"] = q.get_accepted_answers()
-                if q.is_problem_question():
-                    snap["question_variant"] = "problem"
-                    snap["problem_rubric"] = q.get_problem_rubric()
-                    template_name = q.get_problem_template_name()
+                if q.is_crq_question():
+                    subtype = q.get_crq_subtype() or "essay"
+                    snap["question_family"] = "CRQ"
+                    snap["crq_subtype"] = subtype
+                    snap["question_variant"] = subtype
+                    snap["crq_rubric"] = q.get_crq_rubric()
+                    snap["problem_rubric"] = q.get_crq_rubric()
+                    template_name = q.get_crq_template_name()
                     if template_name:
+                        snap["crq_template_name"] = template_name
                         snap["problem_template_name"] = template_name
-                    template_id = q.get_problem_template_id()
+                    template_id = q.get_crq_template_id()
                     if template_id is not None:
+                        snap["crq_template_id"] = template_id
                         snap["problem_template_id"] = template_id
             result.append(snap)
         return result

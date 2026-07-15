@@ -84,7 +84,7 @@ class QuestionBankActionsMixin:
             self._q_table.setItem(r, 3, cell(q.category or "", center=True))
             self._q_table.setItem(r, 4, cell(q.learning_outcome_code or "", center=True))
             self._q_table.setItem(r, 5, cell(self._display_level(q.difficulty), center=True))
-            type_label = "BT" if q.is_problem_question() else _TYPE_TABLE_LABEL.get(q.question_type, q.question_type)
+            type_label = _TYPE_TABLE_LABEL.get(q.question_type, q.question_type)
             self._q_table.setItem(r, 6, cell(type_label, center=True))
             self._q_table.setItem(r, 7, cell(str(q.point_value or 1.0), center=True))
             if q.is_active:
@@ -215,7 +215,7 @@ class QuestionBankActionsMixin:
         if dlg.exec() == QuestionEditorDialog.DialogCode.Accepted:
             self._refresh_questions()
 
-    def _add_problem(self) -> None:
+    def _add_crq(self) -> None:
         if self._current_bank_id is None:
             QMessageBox.information(self, "Thông báo", "Vui lòng chọn ngân hàng trước.")
             return
@@ -227,15 +227,18 @@ class QuestionBankActionsMixin:
             show_critical_error(
                 self,
                 "Lỗi",
-                "Không thể mở cửa sổ thêm bài toán.",
+                "Không thể mở cửa sổ thêm CRQ.",
                 exc=exc,
             )
+
+    def _add_problem(self) -> None:
+        self._add_crq()
 
     def _edit_question(self) -> None:
         q = self._selected_question()
         if q is None:
             return
-        dlg_class = ProblemEditorDialog if q.is_problem_question() else QuestionEditorDialog
+        dlg_class = ProblemEditorDialog if q.is_crq_question() else QuestionEditorDialog
         try:
             dlg = dlg_class(self._current_bank_id or q.bank_id, q, parent=self)
             if dlg.exec() == QDialog.DialogCode.Accepted:
@@ -244,7 +247,7 @@ class QuestionBankActionsMixin:
             show_critical_error(
                 self,
                 "Lỗi",
-                "Không thể mở cửa sổ sửa bài toán.",
+                "Không thể mở cửa sổ sửa CRQ.",
                 exc=exc,
             )
 

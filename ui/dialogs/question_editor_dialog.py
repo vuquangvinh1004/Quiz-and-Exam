@@ -1,6 +1,6 @@
 """Question Editor Dialog – create or edit a single question.
 
-Supports MC, MA, TF, BLANK, SA and ES with a dynamic form that switches
+Supports MC, MA, TF, BLANK and SA with a dynamic form that switches
 sections based on the selected type.
 
 Design rules (ARCHITECTURE §2):
@@ -49,7 +49,6 @@ _LEVELS_BY_TYPE: dict[QuestionType, tuple[str, ...]] = {
     QuestionType.MULTIPLE_ANSWER: ("Nhớ", "Hiểu", "Vận dụng", "Phân tích"),
     QuestionType.BLANK: ("Nhớ", "Hiểu", "Vận dụng", "Phân tích", "Đánh giá", "Sáng tạo"),
     QuestionType.SHORT_ANSWER: ("Vận dụng", "Phân tích", "Đánh giá"),
-    QuestionType.ESSAY: ("Phân tích", "Đánh giá", "Sáng tạo"),
 }
 _DEFAULT_LEVEL_BY_TYPE: dict[QuestionType, str] = {
     QuestionType.TRUE_FALSE: "Nhớ",
@@ -57,7 +56,6 @@ _DEFAULT_LEVEL_BY_TYPE: dict[QuestionType, str] = {
     QuestionType.MULTIPLE_ANSWER: "Nhớ",
     QuestionType.BLANK: "Nhớ",
     QuestionType.SHORT_ANSWER: "Vận dụng",
-    QuestionType.ESSAY: "Phân tích",
 }
 _LEVELS_ALL: tuple[str, ...] = (
     "Nhớ",
@@ -86,7 +84,6 @@ _TYPE_LABELS = {
     QuestionType.TRUE_FALSE: "Đúng/Sai",
     QuestionType.BLANK: "Điền vào chỗ trống",
     QuestionType.SHORT_ANSWER: "Trả lời ngắn",
-    QuestionType.ESSAY: "Tự luận",
 }
 _TYPE_FROM_INDEX = [
     QuestionType.MULTIPLE_CHOICE,
@@ -94,7 +91,6 @@ _TYPE_FROM_INDEX = [
     QuestionType.TRUE_FALSE,
     QuestionType.BLANK,
     QuestionType.SHORT_ANSWER,
-    QuestionType.ESSAY,
 ]
 
 
@@ -379,7 +375,6 @@ class QuestionEditorDialog(QDialog):
         is_blank_sa = qt in (
             QuestionType.BLANK,
             QuestionType.SHORT_ANSWER,
-            QuestionType.ESSAY,
         )
         self._options_group.setVisible(is_mc_ma)
         self._answers_group.setVisible(is_blank_sa)

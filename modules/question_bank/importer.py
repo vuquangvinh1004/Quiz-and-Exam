@@ -632,16 +632,16 @@ class QuestionFileParser:
                     row=row_num, severity="ERROR", column="correct_answers", message=err,
                 ))
 
-        elif question_type == QuestionType.ESSAY:
+        elif question_type in (QuestionType.ESSAY, QuestionType.PROBLEM):
             if has_placeholder:
                 issues.append(ImportIssue(
                     row=row_num, severity="ERROR", column="question_text",
-                    message="essay không được dùng placeholder BLANK trong question_text.",
+                    message="crq không được dùng placeholder BLANK trong question_text.",
                 ))
             if options:
                 issues.append(ImportIssue(
                     row=row_num, severity="WARNING", column="option_a",
-                    message="essay không dùng option_a đến option_f; các cột này sẽ bị bỏ qua khi import.",
+                    message="crq không dùng option_a đến option_f; các cột này sẽ bị bỏ qua khi import.",
                 ))
 
         return issues

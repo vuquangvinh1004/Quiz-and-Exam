@@ -42,7 +42,7 @@ class QuizBuilderQuotaMixin:
         self._type_table.setRowCount(0)
 
         inv = build_inventory(questions)
-        type_order = ("MC", "MA", "TF", "BLANK", "SA", "ES")
+        type_order = ("MC", "MA", "TF", "BLANK", "SA", "ES", "PR")
         for qtype in type_order:
             available = inv.by_type.get(qtype, 0)
             if available <= 0:

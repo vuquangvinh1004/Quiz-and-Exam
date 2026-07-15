@@ -1,6 +1,6 @@
 """Answer rendering component for quiz runner.
 
-Encapsulates UI rendering and answer payload extraction for MC/MA/TF/BLANK/SA/ES.
+Encapsulates UI rendering and answer payload extraction for MC/MA/TF/BLANK/SA/ES/PR.
 """
 from __future__ import annotations
 

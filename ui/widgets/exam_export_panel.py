@@ -196,7 +196,9 @@ class ExamExportPanel(QGroupBox):
 
         self._exp_exam_type = QComboBox()
         self._exp_exam_type.addItem("Trắc nghiệm")
-        self._exp_exam_type.addItem("Trắc nghiệm + Tự luận")
+        self._exp_exam_type.addItem("CRQ")
+        self._exp_exam_type.addItem("Hỗn hợp")
+        self._exp_exam_type.currentIndexChanged.connect(self._on_exam_type_changed)
         exp_form.addRow("Loại đề:", self._exp_exam_type)
 
         self._exp_numbering = QComboBox()
@@ -226,6 +228,7 @@ class ExamExportPanel(QGroupBox):
         self._exp_cb_cover_sheet.setChecked(False)
         self._exp_cb_split_answer_key = QCheckBox("Tách đáp án")
         self._exp_cb_split_answer_key.setChecked(False)
+        self._on_exam_type_changed()
 
         opt_grid = QGridLayout()
         opt_grid.setContentsMargins(0, 0, 0, 0)
@@ -352,15 +355,16 @@ class ExamExportPanel(QGroupBox):
             subject=self._exp_subject.text().strip(),
             course_code=self._exp_course_code.text().strip(),
             exam_title=self._exp_title.text().strip(),
-            exam_type=self._exp_exam_type.currentText(),
+            exam_type=self._normalized_exam_type_text(self._exp_exam_type.currentText()),
             duration_minutes=duration_minutes,
         )
 
     def build_render_config(self) -> ExportConfig:
         """Build ExportConfig from current form values."""
+        exam_type = self._normalized_exam_type_text(self._exp_exam_type.currentText())
         config = ExportConfig(
             show_instructions=self._exp_cb_instructions.isChecked(),
-            show_answer_sheet=self._exp_cb_answer_sheet.isChecked(),
+            show_answer_sheet=exam_type != "CRQ",
             show_scoring_rules=self._exp_cb_scoring.isChecked(),
             show_answer_key=self._exp_cb_answer_key.isChecked(),
             show_question_points=self._exp_cb_show_points.isChecked(),
@@ -399,7 +403,7 @@ class ExamExportPanel(QGroupBox):
             subject=self._exp_subject.text().strip(),
             course_code=self._exp_course_code.text().strip(),
             exam_title=self._exp_title.text().strip(),
-            exam_type=self._exp_exam_type.currentText(),
+            exam_type=self._normalized_exam_type_text(self._exp_exam_type.currentText()),
             numbering_mode=self._exp_numbering.currentData(),
             group_by_type=self._exp_group_by_type.isChecked(),
             show_instructions=self._exp_cb_instructions.isChecked(),
@@ -431,7 +435,7 @@ class ExamExportPanel(QGroupBox):
         self._exp_subject.setText(preset.subject)
         self._exp_course_code.setText(preset.course_code)
         self._exp_title.setText(preset.exam_title)
-        self._select_combo_text(self._exp_exam_type, preset.exam_type)
+        self._select_combo_text(self._exp_exam_type, self._normalized_exam_type_text(preset.exam_type))
         self._select_combo_data(self._exp_numbering, preset.numbering_mode)
         self._exp_group_by_type.setChecked(preset.group_by_type)
         self._exp_cb_instructions.setChecked(preset.show_instructions)
@@ -453,6 +457,7 @@ class ExamExportPanel(QGroupBox):
         self._margin_left.setValue(preset.left_margin_cm)
         self._margin_right.setValue(preset.right_margin_cm)
         self._exp_show_student_info.setChecked(preset.show_student_info_block)
+        self._on_exam_type_changed()
 
     # ------------------------------------------------------------------
     # Export logic
@@ -762,7 +767,7 @@ class ExamExportPanel(QGroupBox):
             f"Mẫu trang bìa: {render_config.cover_sheet_template}",
         ]
         if render_config.essay_questions:
-            lines.append(f"Số câu tự luận: {len(render_config.essay_questions)}")
+            lines.append(f"Số câu CRQ: {len(render_config.essay_questions)}")
         return lines
 
     def _show_export_preview_dialog(self, manifest_text: str) -> bool:
@@ -791,6 +796,17 @@ class ExamExportPanel(QGroupBox):
         return target_path.with_name(f"{target_path.stem}_DAP_AN.docx")
 
     @staticmethod
+    def _normalized_exam_type_text(text: str) -> str:
+        if text == "Trắc nghiệm + CRQ":
+            return "Hỗn hợp"
+        return text
+
+    def _on_exam_type_changed(self) -> None:
+        exam_type = self._normalized_exam_type_text(self._exp_exam_type.currentText())
+        self._exp_cb_answer_sheet.setEnabled(False)
+        self._exp_cb_answer_sheet.setChecked(exam_type != "CRQ")
+
+    @staticmethod
     def _display_question_type(qtype: str) -> str:
         mapping = {
             "MC": "Trắc nghiệm 1 đáp án",
@@ -798,7 +814,8 @@ class ExamExportPanel(QGroupBox):
             "TF": "Đúng/Sai",
             "BLANK": "Điền vào chỗ trống",
             "SA": "Trả lời ngắn",
-            "ES": "Tự luận",
+            "ES": "CRQ - Tự luận",
+            "PR": "CRQ - Bài toán",
         }
         return mapping.get(qtype, qtype)
 
@@ -907,7 +924,7 @@ class ExamExportPanel(QGroupBox):
 
         # ------ UI dialogs (before heavy work) ------
         essay_questions: list[dict] = []
-        if self._exp_exam_type.currentText() == "Trắc nghiệm + Tự luận":
+        if self._normalized_exam_type_text(self._exp_exam_type.currentText()) in {"CRQ", "Hỗn hợp"}:
             dlg = _EssayQuestionsDialog(self)
             if dlg.exec() != QDialog.DialogCode.Accepted:
                 return
@@ -1175,19 +1192,19 @@ class ExamExportPanel(QGroupBox):
 
 
 # ---------------------------------------------------------------------------
-# Helper dialog for essay question scores
+# Helper dialog for CRQ question scores
 # ---------------------------------------------------------------------------
 
 class _EssayQuestionsDialog(QDialog):
-    """Dialog for entering scores of essay (tự luận) questions.
+    """Dialog for entering scores of CRQ questions.
 
-    Displays a row per essay question with a score spinbox.
+    Displays a row per CRQ question with a score spinbox.
     The user can add more rows via the '+' button.
     """
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Cấu hình câu hỏi tự luận")
+        self.setWindowTitle("Cấu hình câu hỏi CRQ")
         self.setMinimumWidth(380)
         self._score_spins: list[QDoubleSpinBox] = []
         self._build_ui()
@@ -1197,8 +1214,8 @@ class _EssayQuestionsDialog(QDialog):
         vl.setSpacing(10)
 
         info = QLabel(
-            "Nhập điểm cho từng câu hỏi tự luận.\n"
-            "Phần Tự luận sẽ được đặt ở cuối bài thi."
+            "Nhập điểm cho từng câu hỏi CRQ.\n"
+            "Phần CRQ sẽ được đặt ở cuối bài thi."
         )
         info.setStyleSheet("font-size: 13px;")
         vl.addWidget(info)
@@ -1239,7 +1256,7 @@ class _EssayQuestionsDialog(QDialog):
         self._form.addRow(f"Câu {n}:", spin)
 
     def essay_questions(self) -> list[dict]:
-        """Return list of essay question dicts with number and score."""
+        """Return list of CRQ question dicts with number and score."""
         return [
             {"number": i + 1, "score": spin.value()}
             for i, spin in enumerate(self._score_spins)

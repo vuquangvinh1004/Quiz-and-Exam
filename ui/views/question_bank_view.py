@@ -88,7 +88,7 @@ class QuestionBankView(QuestionBankActionsMixin, QWidget):
 
         tb_hl = QHBoxLayout()
         tb_hl.addWidget(self._make_btn("+ Thêm câu hỏi", None, self._add_question))
-        tb_hl.addWidget(self._make_btn("+ Thêm bài toán", None, self._add_problem))
+        tb_hl.addWidget(self._make_btn("+ Thêm CRQ", None, self._add_crq))
         tb_hl.addWidget(self._make_btn("Sửa", None, self._edit_question))
         tb_hl.addWidget(self._make_btn("Xóa", None, self._delete_questions))
         refresh_btn = self._make_btn("Cập nhật", "Làm mới dữ liệu ngân hàng và đồng bộ với Tạo bài kiểm tra", self._on_refresh_clicked)

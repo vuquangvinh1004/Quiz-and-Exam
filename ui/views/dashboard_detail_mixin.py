@@ -418,7 +418,7 @@ class DashboardDetailMixin:
             f"Đúng/Sai: {summary.type_breakdown.tf} &nbsp;"
             f"Điền vào chỗ trống: {summary.type_breakdown.blank} &nbsp;"
             f"Trả lời ngắn: {summary.type_breakdown.sa} &nbsp;"
-            f"Tự luận: {summary.type_breakdown.es}"
+            f"CRQ: {summary.type_breakdown.crq}"
         )
         correct_pct = f" ({100 * total_correct // total_uses}%)" if total_uses > 0 else ""
         self._usage_summary_lbl.setText(

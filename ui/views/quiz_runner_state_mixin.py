@@ -16,7 +16,8 @@ def _type_label(qtype: str) -> str:
         "TF": "Đúng/Sai",
         "BLANK": "Điền vào chỗ trống",
         "SA": "Trả lời ngắn",
-        "ES": "Tự luận",
+        "ES": "CRQ - Tự luận",
+        "PR": "CRQ - Bài toán",
     }.get(qtype, qtype)
 
 

@@ -6,7 +6,7 @@ a clean .docx exam document ready for printing.
 
 No database access occurs here. All data must be supplied by the caller.
 
-Supported question types: MC, MA, TF, BLANK, SA, ES
+Supported question types: MC, MA, TF, BLANK, SA, ES, PR
 
 Generated sections (each controlled by ExportConfig):
     1. Exam header (school, department, subject, title, etc.)
@@ -74,7 +74,7 @@ class ExportConfig:
     watermark_preset: str = "custom"
     cover_sheet_template: str = "standard"
     answer_key_naming_policy: str = "suffix"
-    # essay questions appended as last section
+    # CRQ questions appended as last section
     # each dict: {"number": int, "score": float}
     essay_questions: list[dict] = field(default_factory=list)
 
@@ -103,6 +103,11 @@ class ExportQuestionSnapshot:
     options: list = field(default_factory=list)
     accepted_answers: Optional[list] = None
     question_variant: str = ""
+    question_family: str = ""
+    crq_subtype: str = ""
+    crq_rubric: Optional[list] = None
+    crq_template_id: Optional[int] = None
+    crq_template_name: str = ""
     problem_rubric: Optional[list] = None
     problem_template_id: Optional[int] = None
     problem_template_name: str = ""
@@ -121,6 +126,11 @@ class ExportQuestionSnapshot:
             options=data.get("options") or [],
             accepted_answers=data.get("accepted_answers"),
             question_variant=data.get("question_variant") or "",
+            question_family=data.get("question_family") or "",
+            crq_subtype=data.get("crq_subtype") or "",
+            crq_rubric=data.get("crq_rubric"),
+            crq_template_id=data.get("crq_template_id"),
+            crq_template_name=data.get("crq_template_name") or "",
             problem_rubric=data.get("problem_rubric"),
             problem_template_id=data.get("problem_template_id"),
             problem_template_name=data.get("problem_template_name") or "",
@@ -139,6 +149,11 @@ class ExportQuestionSnapshot:
             "options": self.options,
             "accepted_answers": self.accepted_answers,
             "question_variant": self.question_variant,
+            "question_family": self.question_family,
+            "crq_subtype": self.crq_subtype,
+            "crq_rubric": self.crq_rubric,
+            "crq_template_id": self.crq_template_id,
+            "crq_template_name": self.crq_template_name,
             "problem_rubric": self.problem_rubric,
             "problem_template_id": self.problem_template_id,
             "problem_template_name": self.problem_template_name,
@@ -155,7 +170,8 @@ _TYPE_LABELS: dict[str, str] = {
     "TF": "Đúng/Sai",
     "BLANK": "Điền vào chỗ trống",
     "SA": "Trả lời ngắn",
-    "ES": "Tự luận",
+    "ES": "CRQ - Tự luận",
+    "PR": "CRQ - Bài toán",
 }
 
 _TYPE_STATS_LABELS: dict[str, str] = {
@@ -164,7 +180,8 @@ _TYPE_STATS_LABELS: dict[str, str] = {
     "TF": "Đúng/Sai",
     "BLANK": "Điền vào chỗ trống",
     "SA": "Trả lời ngắn",
-    "ES": "Tự luận",
+    "ES": "CRQ - Tự luận",
+    "PR": "CRQ - Bài toán",
 }
 
 _DIFFICULTY_LABELS: dict[str, str] = {
@@ -204,8 +221,12 @@ _INSTRUCTIONS: dict[str, str] = {
         "Trả lời ngắn gọn, rõ ràng vào phần dành sẵn bên dưới mỗi câu."
     ),
     "ES": (
-        "Câu tự luận (Essay): "
+        "Câu CRQ - Tự luận (Essay): "
         "Trình bày câu trả lời theo hướng dẫn hoặc dàn ý được yêu cầu."
+    ),
+    "PR": (
+        "Câu CRQ - Bài toán (Problem): "
+        "Trình bày lời giải theo hướng dẫn hoặc rubric được yêu cầu."
     ),
 }
 
@@ -810,7 +831,6 @@ class WordRenderer:
         types_present = self._types_present(questions)
         if not types_present:
             return
-        has_problem_questions = any(self._is_problem_question(q) for q in questions)
 
         p = doc.add_paragraph("HƯỚNG DẪN LÀM BÀI")
         p.runs[0].bold = True
@@ -818,17 +838,8 @@ class WordRenderer:
         p.runs[0].underline = True
         self._apply_paragraph_spacing(p)
 
-        for qtype in ["MC", "MA", "TF", "BLANK", "SA", "ES"]:
+        for qtype in ["MC", "MA", "TF", "BLANK", "SA", "ES", "PR"]:
             if qtype in types_present and qtype in _INSTRUCTIONS:
-                if qtype == "ES" and has_problem_questions:
-                    p = doc.add_paragraph(style="List Bullet")
-                    p.add_run(
-                        "Bài toán (Problem): "
-                        "Trình bày lời giải theo hướng dẫn hoặc rubric được yêu cầu."
-                    )
-                    p.runs[0].font.size = Pt(12)
-                    self._apply_paragraph_spacing(p)
-                    continue
                 p = doc.add_paragraph(style="List Bullet")
                 p.add_run(_INSTRUCTIONS[qtype])
                 p.runs[0].font.size = Pt(12)
@@ -853,7 +864,7 @@ class WordRenderer:
             return [("", "", list(questions))]
 
         # Group by type in canonical order
-        order = ["MC", "MA", "TF", "BLANK", "SA", "ES"]
+        order = ["MC", "MA", "TF", "BLANK", "SA", "ES", "PR"]
         buckets: dict[str, list[dict]] = {t: [] for t in order}
         for q in questions:
             qtype = q.get("type", "MC")
@@ -931,11 +942,8 @@ class WordRenderer:
             self._render_blank_answer_space(doc)
         elif qtype == "SA":
             self._render_sa_answer_space(doc)
-        elif qtype == "ES":
-            if self._is_problem_question(q):
-                self._render_problem_answer_space(doc, q)
-            else:
-                self._render_sa_answer_space(doc)
+        elif qtype in ("ES", "PR"):
+            self._render_problem_answer_space(doc, q)
 
     def _render_mc_ma_options(self, doc: Document, q: dict) -> None:
         options = q.get("options", [])
@@ -992,8 +1000,8 @@ class WordRenderer:
         section_letter: str,
         config: ExportConfig,
     ) -> None:
-        """Render Tự luận section as the last part of the question body."""
-        title = f"Phần {section_letter}. Tự luận" if section_letter else "Tự luận"
+        """Render CRQ section as the last part of the question body."""
+        title = f"Phần {section_letter}. CRQ" if section_letter else "CRQ"
         p = doc.add_paragraph(title)
         run = p.runs[0]
         run.bold = True
@@ -1001,8 +1009,7 @@ class WordRenderer:
         run.underline = True
         self._apply_paragraph_spacing(p)
 
-        for eq in essay_questions:
-            num = eq.get("number", 1)
+        for num, eq in enumerate(essay_questions, start=1):
             score = eq.get("score", 1.0)
             p = doc.add_paragraph()
             run = p.add_run(f"Câu {num}.")
@@ -1031,6 +1038,15 @@ class WordRenderer:
         grouped: list[tuple[str, str, list[dict]]],
         config: ExportConfig,
     ) -> None:
+        answerable_types = {"MC", "MA", "TF", "BLANK", "SA"}
+        answerable_groups: list[tuple[str, list[dict]]] = []
+        for _letter, title, qs in grouped:
+            items = [q for q in qs if q.get("type", "MC") in answerable_types]
+            if items:
+                answerable_groups.append((title, items))
+
+        if not answerable_groups:
+            return
 
         p = doc.add_paragraph("PHIẾU TRẢ LỜI")
         p.runs[0].bold = True
@@ -1039,20 +1055,16 @@ class WordRenderer:
         self._apply_paragraph_spacing(p)
 
         global_counter = 0
-        for _letter, title, qs in grouped:
+        for title, qs in answerable_groups:
             if title:
                 p = doc.add_paragraph(title)
                 p.runs[0].bold = True
                 p.runs[0].font.size = Pt(12)
                 self._apply_paragraph_spacing(p)
 
-            for q in qs:
+            for section_num, q in enumerate(qs, start=1):
                 global_counter += 1
-                section_num = (
-                    global_counter
-                    if config.numbering_mode == "global"
-                    else qs.index(q) + 1
-                )
+                section_num = global_counter if config.numbering_mode == "global" else section_num
                 qtype = q.get("type", "MC")
 
                 if qtype in ("MC", "TF"):
@@ -1081,41 +1093,6 @@ class WordRenderer:
                     )
                     p.runs[0].font.size = Pt(12)
                     self._apply_paragraph_spacing(p)
-                elif qtype == "ES":
-                    if self._is_problem_question(q):
-                        self._render_problem_answer_sheet_line(doc, section_num)
-                    else:
-                        p = doc.add_paragraph(
-                            f"Câu {section_num}:  " + "_" * 50
-                        )
-                        p.runs[0].font.size = Pt(12)
-                        self._apply_paragraph_spacing(p)
-
-        # Essay questions — blank answer lines per question
-        if config.essay_questions:
-            p = doc.add_paragraph("Phần Tự luận")
-            p.runs[0].bold = True
-            p.runs[0].font.size = Pt(12)
-            self._apply_paragraph_spacing(p)
-            for eq in config.essay_questions:
-                num = eq.get("number", 1)
-                score = eq.get("score", 1.0)
-                p = doc.add_paragraph()
-                run = p.add_run(f"Câu {num}.")
-                run.bold = True
-                run.font.size = Pt(11)
-                self._apply_paragraph_spacing(p)
-                if config.show_question_points:
-                    p.add_run(f"  [{score:g} điểm]")
-                    p.runs[-1].font.size = Pt(11)
-                    p.runs[-1].font.color.rgb = RGBColor(0x80, 0x80, 0x80)
-                self._apply_paragraph_spacing(p)
-                for _ in range(6):
-                    p2 = doc.add_paragraph("_" * 80)
-                    p2.runs[0].font.size = Pt(12)
-                    p2.paragraph_format.left_indent = Cm(1.0)
-                    self._apply_paragraph_spacing(p2)
-                doc.add_paragraph("")
 
         doc.add_paragraph("")
 
@@ -1129,7 +1106,6 @@ class WordRenderer:
         types_present = self._types_present(questions)
         if not types_present:
             return
-        has_problem_questions = any(self._is_problem_question(q) for q in questions)
 
 
         p = doc.add_paragraph("QUY ĐỊNH CHẤM ĐIỂM")
@@ -1143,26 +1119,24 @@ class WordRenderer:
             "TF": "Mỗi câu Đúng/Sai: chọn đúng phương án duy nhất mới được điểm.",
             "BLANK": "Mỗi câu Điền vào chỗ trống: điền đúng (không phân biệt hoa/thường, bỏ qua khoảng trắng đầu/cuối) mới được điểm.",
             "SA": "Mỗi câu Trả lời ngắn: so khớp với đáp án mẫu (không phân biệt hoa/thường) mới được điểm.",
-            "ES": "Mỗi câu Tự luận: chấm theo thang điểm/rubric của giáo viên.",
+            "ES": "Mỗi câu CRQ - Tự luận: chấm theo thang điểm/rubric của giáo viên.",
+            "PR": "Mỗi câu CRQ - Bài toán: chấm theo thang điểm/rubric của giáo viên.",
         }
 
         total = sum(q.get("point_value", 1.0) for q in questions)
         if config and config.essay_questions:
             total += sum(eq.get("score", 1.0) for eq in config.essay_questions)
 
-        for qtype in ["MC", "MA", "TF", "BLANK", "SA", "ES"]:
+        for qtype in ["MC", "MA", "TF", "BLANK", "SA", "ES", "PR"]:
             if qtype in types_present:
                 p = doc.add_paragraph(style="List Bullet")
-                if qtype == "ES" and has_problem_questions:
-                    p.add_run("Mỗi câu Bài toán (Problem): chấm theo rubric/thang điểm của giáo viên.")
-                else:
-                    p.add_run(rules[qtype])
+                p.add_run(rules[qtype])
                 p.runs[0].font.size = Pt(12)
                 self._apply_paragraph_spacing(p)
 
         if config and config.essay_questions:
             p = doc.add_paragraph(style="List Bullet")
-            p.add_run("Câu hỏi tự luận: Chấm theo thang điểm hướng dẫn chi tiết trong đáp án.")
+            p.add_run("Câu hỏi CRQ: Chấm theo thang điểm hướng dẫn chi tiết trong đáp án.")
             p.runs[0].font.size = Pt(12)
             self._apply_paragraph_spacing(p)
 
@@ -1221,8 +1195,10 @@ class WordRenderer:
                     )
                     p.runs[0].font.size = Pt(12)
                     self._apply_paragraph_spacing(p)
-                elif self._is_problem_question(q):
-                    p = doc.add_paragraph(f"Câu {num}. Bài toán  —  {points:g} điểm")
+                elif qtype in ("ES", "PR"):
+                    p = doc.add_paragraph(
+                        f"Câu {num}. {_TYPE_LABELS.get(qtype, qtype)}  —  {points:g} điểm"
+                    )
                     p.runs[0].font.size = Pt(12)
                     self._apply_paragraph_spacing(p)
                     self._render_problem_template_note(doc, q, raw_latex=config.raw_latex_answer_key)
@@ -1245,18 +1221,17 @@ class WordRenderer:
 
         doc.add_paragraph("")
 
-        # Essay questions in answer key
+        # CRQ questions in answer key
         if config.essay_questions:
-            p = doc.add_paragraph("Phần Tự luận")
+            p = doc.add_paragraph("Phần CRQ")
             p.runs[0].bold = True
             p.runs[0].font.size = Pt(12)
             self._apply_paragraph_spacing(p)
-            for eq in config.essay_questions:
-                num = eq.get("number", 1)
+            for num, eq in enumerate(config.essay_questions, start=1):
                 score = eq.get("score", 1.0)
                 total += score
                 p = doc.add_paragraph(
-                    f"Câu {num} (tự luận): Chấm theo thang điểm  —  {score:g} điểm"
+                    f"Câu {num} (CRQ): Chấm theo thang điểm  —  {score:g} điểm"
                 )
                 p.runs[0].font.size = Pt(12)
                 self._apply_paragraph_spacing(p)
@@ -1270,17 +1245,40 @@ class WordRenderer:
 
     @staticmethod
     def _is_problem_question(question: dict) -> bool:
-        return str(question.get("question_variant") or "").strip() == "problem"
+        subtype = str(
+            question.get("crq_subtype")
+            or question.get("question_variant")
+            or ""
+        ).strip().lower()
+        return subtype == "problem"
+
+    @staticmethod
+    def _is_crq_question(question: dict) -> bool:
+        return str(question.get("type") or "").strip() in {"ES", "PR"}
+
+    @staticmethod
+    def _crq_subtype(question: dict) -> str:
+        qtype = str(question.get("type") or "").strip()
+        if qtype == "PR":
+            return "problem"
+        subtype = str(
+            question.get("crq_subtype")
+            or question.get("question_variant")
+            or ""
+        ).strip().lower()
+        if subtype in {"essay", "problem"}:
+            return subtype
+        if qtype == "ES":
+            return "essay"
+        return ""
 
     def _section_title_label(self, qtype: str, questions: list[dict]) -> str:
-        if qtype != "ES":
+        if qtype not in ("ES", "PR"):
             return _TYPE_LABELS.get(qtype, qtype)
-        if any(self._is_problem_question(q) for q in questions):
-            return "Bài toán (Problem)"
         return _TYPE_LABELS.get(qtype, qtype)
 
     def _problem_answer_line_count(self, question: dict) -> int:
-        rubric = question.get("problem_rubric") or []
+        rubric = question.get("crq_rubric") or question.get("problem_rubric") or []
         count = len(rubric)
         return count if count > 0 else 6
 
@@ -1304,7 +1302,7 @@ class WordRenderer:
         doc.add_paragraph("")
 
     def _render_problem_rubric_answer_key(self, doc: Document, question: dict, *, raw_latex: bool = False) -> None:
-        rubric = question.get("problem_rubric") or []
+        rubric = question.get("crq_rubric") or question.get("problem_rubric") or []
         if not rubric:
             fallback = doc.add_paragraph("Chấm theo thang điểm/rubric của giáo viên.")
             fallback.runs[0].font.size = Pt(12)
@@ -1360,8 +1358,14 @@ class WordRenderer:
         self._apply_paragraph_spacing(p)
 
     def _render_problem_template_note(self, doc: Document, question: dict, *, raw_latex: bool = False) -> None:
-        template_name = str(question.get("problem_template_name") or "").strip()
-        template_id = question.get("problem_template_id")
+        template_name = str(
+            question.get("crq_template_name")
+            or question.get("problem_template_name")
+            or ""
+        ).strip()
+        template_id = question.get("crq_template_id")
+        if template_id is None:
+            template_id = question.get("problem_template_id")
         if not template_name:
             if template_id is None:
                 return

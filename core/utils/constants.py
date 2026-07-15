@@ -22,6 +22,13 @@ class QuestionType(str, Enum):
     TRUE_FALSE = "TF"
     SHORT_ANSWER = "SA"
     ESSAY = "ES"
+    PROBLEM = "PR"
+
+
+class QuestionFamily(str, Enum):
+    """Higher-level question families used for grouped UI labels."""
+
+    CONSTRUCTED_RESPONSE = "CRQ"
 
 
 # Mapping from import-format long names to internal DB codes
@@ -32,7 +39,20 @@ QUESTION_TYPE_IMPORT_MAP: dict[str, QuestionType] = {
     "true_false": QuestionType.TRUE_FALSE,
     "short_answer": QuestionType.SHORT_ANSWER,
     "essay": QuestionType.ESSAY,
+    "problem": QuestionType.PROBLEM,
 }
+
+
+CRQ_QUESTION_TYPES: tuple[QuestionType, ...] = (
+    QuestionType.ESSAY,
+    QuestionType.PROBLEM,
+)
+
+
+def is_crq_question_type(value: QuestionType | str) -> bool:
+    """Return whether *value* belongs to the constructed-response family."""
+    raw = value.value if isinstance(value, QuestionType) else str(value)
+    return raw in {qt.value for qt in CRQ_QUESTION_TYPES}
 
 
 class QuizMode(str, Enum):

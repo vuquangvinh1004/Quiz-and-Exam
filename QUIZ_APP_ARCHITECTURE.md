@@ -485,14 +485,18 @@ Ràng buộc:
 
 1. Người dùng cấu hình bài kiểm tra trong tab Tạo bài kiểm tra như bình thường.
 2. Người dùng mở rộng nhóm "Xuất đề thi" và điền metadata (trường, môn, tiêu đề, hình thức thi).
-3. Người dùng chọn các tùy chọn: kèm phiếu trả lời, kèm đáp án, kèm quy định chấm điểm, nhóm theo loại câu hỏi.
-4. Người dùng nhấn nút "Xuất đề thi (.docx)".
-5. Hệ thống kiểm tra metadata bắt buộc (tối thiểu tiêu đề đề thi).
-6. Hệ thống gọi QuestionSelector để lấy danh sách câu hỏi theo bộ lọc hiện tại.
-7. Hệ thống gọi WordRenderer.render() với danh sách câu và cấu hình xuất.
-8. WordRenderer sinh file .docx và lưu tạm vào data/exports/.
-9. Hệ thống mở QFileDialog.getSaveFileName() để người dùng chọn hoặc xác nhận vị trí lưu.
-10. Hệ thống thông báo thành công và có thể mở thư mục chứa file.
+3. Người dùng chọn loại đề trong 3 mode: `Trắc nghiệm`, `CRQ`, `Hỗn hợp`.
+4. Người dùng chọn các tùy chọn render phù hợp. Quy ước hiện tại:
+   - `Trắc nghiệm`: sinh phiếu trả lời cho toàn bộ câu hỏi objective.
+   - `CRQ`: không sinh phiếu trả lời riêng vì câu trả lời nằm ngay sau câu hỏi.
+   - `Hỗn hợp`: sinh phiếu trả lời cho objective, CRQ nằm cuối đề và không xuất hiện trong phiếu trả lời.
+5. Người dùng nhấn nút "Xuất đề thi (.docx)".
+6. Hệ thống kiểm tra metadata bắt buộc (tối thiểu tiêu đề đề thi).
+7. Hệ thống gọi QuestionSelector để lấy danh sách câu hỏi theo bộ lọc hiện tại.
+8. Hệ thống gọi WordRenderer.render() với danh sách câu và cấu hình xuất.
+9. WordRenderer sinh file .docx và lưu tạm vào data/exports/.
+10. Hệ thống mở QFileDialog.getSaveFileName() để người dùng chọn hoặc xác nhận vị trí lưu.
+11. Hệ thống thông báo thành công và có thể mở thư mục chứa file.
 
 ---
 
@@ -838,9 +842,10 @@ CREATE TABLE app_settings (
 1. Export/print workflow được phép có lớp `preset/template` để người dùng lưu và nạp lại cấu hình xuất đề thường dùng.
 2. Preset export phải đi qua facade hoặc service chuyên trách; UI không tự xử lý JSON/file schema như business contract chính.
 3. Preset tối thiểu phải bao gồm metadata đầu đề và các tùy chọn render quan trọng: `exam_type`, `numbering_mode`, `group_by_type`, `show_instructions`, `show_answer_sheet`, `show_scoring_rules`, `show_answer_key`.
-4. User-defined export presets nên được lưu ở vùng dữ liệu người dùng (`data/templates/...`) để phù hợp với desktop/local-first và hỗ trợ sao lưu cùng dữ liệu ứng dụng.
-5. Việc template hóa Phase 3 không được kéo logic render ra khỏi `WordRenderer`; preset chỉ cấu hình workflow, không thay đổi contract snapshot/render lõi.
-6. Preset mặc định được phép tự áp dụng theo ngữ cảnh; thứ tự ưu tiên hiện tại là `bank` > `department_subject` > `global`.
+4. `exam_type` hiện hợp lệ với các giá trị `Trắc nghiệm`, `CRQ`, `Hỗn hợp`; preset cũ `Trắc nghiệm + CRQ` phải được normalize sang `Hỗn hợp` khi đọc/lưu.
+5. User-defined export presets nên được lưu ở vùng dữ liệu người dùng (`data/templates/...`) để phù hợp với desktop/local-first và hỗ trợ sao lưu cùng dữ liệu ứng dụng.
+6. Việc template hóa Phase 3 không được kéo logic render ra khỏi `WordRenderer`; preset chỉ cấu hình workflow, không thay đổi contract snapshot/render lõi.
+7. Preset mặc định được phép tự áp dụng theo ngữ cảnh; thứ tự ưu tiên hiện tại là `bank` > `department_subject` > `global`.
 
 ### 9.9. Batch export and print profile contract
 

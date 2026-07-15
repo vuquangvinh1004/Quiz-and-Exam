@@ -32,9 +32,14 @@ Current Phase 3 analytics baseline:
 
 Current export/print workflow baseline:
 - reusable export presets for common teacher workflows
-- save / load / delete đề export templates from the app
+- save / load / delete export templates from the app
 - keep template storage local-first in user data
 - auto-apply default presets by bank or department + subject
+- exam type selector supports `Trắc nghiệm`, `CRQ`, and `Hỗn hợp`
+- `CRQ` remains a family with separate `ES` and `PR` subtypes for statistics
+- CRQ-only exports skip the answer sheet; mixed exports keep the answer sheet for objective questions only
+- CRQ sections are rendered at the end and renumbered from 1
+- legacy presets using `Trắc nghiệm + CRQ` are auto-normalized to `Hỗn hợp`
 - batch export package with standard print naming
 - print profile for paper size, margins, and student-info block visibility
 - optional cover sheet and watermark
@@ -120,6 +125,7 @@ For full project-level policy, see:
 
 - [QUIZ_APP_ARCHITECTURE.md](QUIZ_APP_ARCHITECTURE.md)
 - [QUIZ_APP_ROADMAP.md](QUIZ_APP_ROADMAP.md)
+- [docs/crq_export_changes.md](docs/crq_export_changes.md)
 
 ---
 
@@ -162,6 +168,12 @@ Mốc export/print workflow hiện tại:
 - hỗ trợ lưu / nạp / xóa mẫu xuất đề ngay trong app
 - preset được lưu cục bộ trong dữ liệu người dùng để thuận tiện sao lưu
 - có preset mặc định tự áp dụng theo ngân hàng hoặc theo cặp khoa + môn
+- bộ chọn loại đề hỗ trợ `Trắc nghiệm`, `CRQ`, `Hỗn hợp`
+- `CRQ` là family riêng; `ES` và `PR` vẫn được giữ riêng để thống kê
+- đề chỉ CRQ không sinh phiếu trả lời riêng
+- đề hỗn hợp chỉ sinh phiếu trả lời cho phần trắc nghiệm
+- phần CRQ luôn nằm cuối đề và được đánh số lại từ 1
+- preset cũ `Trắc nghiệm + CRQ` tự được chuẩn hóa thành `Hỗn hợp`
 - batch export nhiều đề được đóng thành package có naming convention chuẩn
 - print profile hỗ trợ chọn khổ giấy, chỉnh lề và ẩn/hiện block thông tin sinh viên
 - hỗ trợ cover sheet và watermark cho luồng in ấn/phát hành nội bộ
@@ -247,3 +259,4 @@ Dự án này tuân theo các nguyên tắc thiết kế chiến lược đượ
 
 - [QUIZ_APP_ARCHITECTURE.md](QUIZ_APP_ARCHITECTURE.md)
 - [QUIZ_APP_ROADMAP.md](QUIZ_APP_ROADMAP.md)
+- [docs/crq_export_changes.md](docs/crq_export_changes.md)

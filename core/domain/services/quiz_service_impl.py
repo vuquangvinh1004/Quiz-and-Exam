@@ -53,7 +53,7 @@ class QuizCatalogService:
 
         for order, snap in enumerate(typed_snapshots, start=1):
             qtype = snap.type
-            if qtype in ("BLANK", "SA", "ES") and snap.accepted_answers:
+            if qtype in ("BLANK", "SA", "ES", "PR") and snap.accepted_answers:
                 sa_json = json.dumps(
                     {
                         "answers": snap.accepted_answers,

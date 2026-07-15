@@ -20,7 +20,8 @@ class DashboardView(DashboardDetailMixin, QWidget):
         "TF": "Đúng/Sai",
         "BLANK": "Điền vào chỗ trống",
         "SA": "Trả lời ngắn",
-        "ES": "Tự luận",
+        "PR": "CRQ - Bài toán",
+        "CRQ": "CRQ",
     }
     _DIFFICULTY_LABELS = ("Nhớ", "Hiểu", "Vận dụng", "Phân tích", "Đánh giá", "Sáng tạo")
 
@@ -130,7 +131,7 @@ class DashboardView(DashboardDetailMixin, QWidget):
         self._card_tf = self._make_card("Đúng/Sai", "0")
         self._card_blank = self._make_card("Điền vào chỗ trống", "0")
         self._card_sa = self._make_card("Trả lời ngắn", "0")
-        self._card_es = self._make_card("Tự luận", "0")
+        self._card_es = self._make_card("CRQ", "0")
         type_grid.addWidget(self._card_mc, 0, 0)
         type_grid.addWidget(self._card_ma, 0, 1)
         type_grid.addWidget(self._card_tf, 0, 2)
@@ -178,7 +179,7 @@ class DashboardView(DashboardDetailMixin, QWidget):
         self._card_tf.set_value(str(overview.type_breakdown.tf))
         self._card_blank.set_value(str(overview.type_breakdown.blank))
         self._card_sa.set_value(str(overview.type_breakdown.sa))
-        self._card_es.set_value(str(overview.type_breakdown.es))
+        self._card_es.set_value(str(overview.type_breakdown.crq))
         self._apply_attempt_stats(getattr(overview, "attempt_stats", None))
         self._apply_reporting(
             getattr(overview, "mode_breakdown", None),

@@ -6,6 +6,10 @@ import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+_LEGACY_EXAM_TYPE_MAP = {
+    "Trắc nghiệm + CRQ": "Hỗn hợp",
+}
+
 
 @dataclass
 class ExportPreset:
@@ -61,6 +65,7 @@ class ExportPresetStore:
                 data = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 continue
+            data = self._normalize_preset_data(data)
             preset_name = str(data.get("name") or path.stem).strip()
             if preset_name:
                 names.append(preset_name)
@@ -72,6 +77,7 @@ class ExportPresetStore:
             raise ValueError("Preset name must not be empty.")
 
         self._presets_dir.mkdir(parents=True, exist_ok=True)
+        preset = self._normalize_preset(preset)
         path = self._path_for_name(name)
         path.write_text(
             json.dumps(asdict(preset), ensure_ascii=False, indent=2),
@@ -87,6 +93,7 @@ class ExportPresetStore:
             raise ValueError(f"Preset not found: {name}") from exc
         except json.JSONDecodeError as exc:
             raise ValueError(f"Preset file is invalid JSON: {name}") from exc
+        data = self._normalize_preset_data(data)
         return ExportPreset(**data)
 
     def delete_preset(self, name: str) -> bool:
@@ -139,10 +146,27 @@ class ExportPresetStore:
         for path in sorted(self._presets_dir.glob("*.json")):
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
+                data = self._normalize_preset_data(data)
                 presets.append(ExportPreset(**data))
             except (OSError, json.JSONDecodeError, TypeError):
                 continue
         return presets
+
+    @classmethod
+    def _normalize_preset_data(cls, data: dict) -> dict:
+        normalized = dict(data)
+        exam_type = str(normalized.get("exam_type") or "").strip()
+        if exam_type in _LEGACY_EXAM_TYPE_MAP:
+            normalized["exam_type"] = _LEGACY_EXAM_TYPE_MAP[exam_type]
+        return normalized
+
+    @classmethod
+    def _normalize_preset(cls, preset: ExportPreset) -> ExportPreset:
+        data = asdict(preset)
+        normalized = cls._normalize_preset_data(data)
+        if normalized == data:
+            return preset
+        return ExportPreset(**normalized)
 
     @staticmethod
     def _normalize_key(value: str) -> str:

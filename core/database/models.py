@@ -119,7 +119,7 @@ class Question(Base):
     __tablename__ = "questions"
     __table_args__ = (
         CheckConstraint(
-            "question_type IN ('MC', 'MA', 'BLANK', 'TF', 'SA', 'ES')",
+            "question_type IN ('MC', 'MA', 'BLANK', 'TF', 'SA', 'ES', 'PR')",
             name="ck_questions_type",
         ),
         Index("ix_questions_bank_id", "bank_id"),
@@ -188,21 +188,67 @@ class Question(Base):
         """Serialize and store accepted answers as JSON."""
         self.accepted_answers = json.dumps(answers, ensure_ascii=False)
 
-    def is_problem_question(self) -> bool:
-        """Return whether this essay question is stored as a problem/rubric payload."""
+    def is_crq_question(self) -> bool:
+        """Return whether this question uses the CRQ rubric payload format."""
+        if self.question_type in {"ES", "PR"}:
+            return True
         data = self.get_accepted_answer_payload()
-        return isinstance(data, dict) and data.get("kind") == "problem"
+        if not isinstance(data, dict):
+            return False
+        kind = str(data.get("kind", "")).strip().lower()
+        return kind in {"problem", "crq"}
 
-    def get_problem_rubric(self) -> list[dict[str, object]]:
-        """Return structured rubric rows for problem questions."""
+    def is_problem_question(self) -> bool:
+        """Backward-compatible alias for legacy problem-style CRQ questions."""
+        if self.question_type == "PR":
+            return True
+        data = self.get_accepted_answer_payload()
+        if not isinstance(data, dict):
+            return False
+        kind = str(data.get("kind", "")).strip().lower()
+        subtype = str(data.get("subtype", "")).strip().lower()
+        if kind == "problem" and not subtype:
+            return True
+        return kind in {"problem", "crq"} and subtype in {"problem", "bai_toan"}
+
+    def get_crq_subtype(self) -> str:
+        """Return the CRQ subtype: essay or problem."""
+        if self.question_type == "PR":
+            return "problem"
+        if self.question_type == "ES":
+            data = self.get_accepted_answer_payload()
+            if isinstance(data, dict):
+                kind = str(data.get("kind", "")).strip().lower()
+                subtype = str(data.get("subtype", "")).strip().lower()
+                if subtype in {"essay", "problem"}:
+                    return subtype
+                if kind == "problem":
+                    return "problem"
+            return "essay"
+        data = self.get_accepted_answer_payload()
+        if isinstance(data, dict):
+            kind = str(data.get("kind", "")).strip().lower()
+            subtype = str(data.get("subtype", "")).strip().lower()
+            if subtype in {"essay", "problem"}:
+                return subtype
+            if kind == "problem":
+                return "problem"
+        return ""
+
+    def get_crq_rubric(self) -> list[dict[str, object]]:
+        """Return structured rubric rows for CRQ questions."""
         data = self.get_accepted_answer_payload()
         if not isinstance(data, dict):
             return []
         rubric = data.get("rubric", [])
         return rubric if isinstance(rubric, list) else []
 
-    def get_problem_template_id(self) -> int | None:
-        """Return the template id saved with a problem payload, if any."""
+    def get_problem_rubric(self) -> list[dict[str, object]]:
+        """Backward-compatible alias for CRQ rubric rows."""
+        return self.get_crq_rubric()
+
+    def get_crq_template_id(self) -> int | None:
+        """Return the template id saved with a CRQ payload, if any."""
         data = self.get_accepted_answer_payload()
         if not isinstance(data, dict):
             return None
@@ -212,12 +258,20 @@ class Question(Base):
         except (TypeError, ValueError):
             return None
 
-    def get_problem_template_name(self) -> str:
-        """Return the template name saved with a problem payload, if any."""
+    def get_problem_template_id(self) -> int | None:
+        """Backward-compatible alias for CRQ template id."""
+        return self.get_crq_template_id()
+
+    def get_crq_template_name(self) -> str:
+        """Return the template name saved with a CRQ payload, if any."""
         data = self.get_accepted_answer_payload()
         if not isinstance(data, dict):
             return ""
         return str(data.get("template_name", "") or "").strip()
+
+    def get_problem_template_name(self) -> str:
+        """Backward-compatible alias for CRQ template name."""
+        return self.get_crq_template_name()
 
     def __repr__(self) -> str:
         return f"<Question id={self.id} type={self.question_type} code={self.question_code!r}>"

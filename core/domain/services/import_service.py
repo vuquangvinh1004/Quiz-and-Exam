@@ -203,11 +203,12 @@ def _build_question(pq: ParsedQuestion, bank_id: int) -> Question:
         trim_whitespace=pq.trim_whitespace,
         is_active=(pq.status == "active"),
     )
-    # BLANK / SA / ES store accepted answers as a JSON list
+    # BLANK / SA / CRQ store accepted answers as a JSON payload/list
     if pq.question_type in (
         QuestionType.BLANK,
         QuestionType.SHORT_ANSWER,
         QuestionType.ESSAY,
+        QuestionType.PROBLEM,
     ):
         q.accepted_answers = json.dumps(pq.correct_answers, ensure_ascii=False)
     return q
