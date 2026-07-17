@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from PySide6.QtWidgets import QMessageBox
@@ -88,7 +88,7 @@ def test_finalize_session_sets_time_up_status(qtbot, monkeypatch) -> None:
     view._quiz_title = "Quiz"
     view._submitter_name = ""
     view._submitter_id = ""
-    view._started_at = datetime.now(timezone.utc)
+    view._started_at = datetime.now(UTC)
     view._quiz_questions = [
         QuizQuestionSnapshot(quiz_question_id=1, order=1, content="Q1", type="MC")
     ]
@@ -122,7 +122,7 @@ def test_finalize_session_sets_submitted_status(qtbot, monkeypatch) -> None:
     view._quiz_title = "Quiz"
     view._submitter_name = ""
     view._submitter_id = ""
-    view._started_at = datetime.now(timezone.utc)
+    view._started_at = datetime.now(UTC)
     view._quiz_questions = [
         QuizQuestionSnapshot(quiz_question_id=1, order=1, content="Q1", type="MC")
     ]
@@ -156,7 +156,7 @@ def test_finalize_session_failure_keeps_attempt_recoverable(qtbot, monkeypatch) 
     view._quiz_title = "Quiz"
     view._submitter_name = ""
     view._submitter_id = ""
-    view._started_at = datetime.now(timezone.utc)
+    view._started_at = datetime.now(UTC)
     view._remaining_seconds = 180
     view._quiz_questions = [
         QuizQuestionSnapshot(quiz_question_id=1, order=1, content="Q1", type="MC")
@@ -204,7 +204,7 @@ def test_exam_time_up_finalize_failure_locks_answers_and_allows_retry(qtbot, mon
     view._quiz_title = "Quiz Exam"
     view._submitter_name = "Nguyen Van A"
     view._submitter_id = "SV001"
-    view._started_at = datetime.now(timezone.utc)
+    view._started_at = datetime.now(UTC)
     view._remaining_seconds = 0
     view._quiz_questions = [
         QuizQuestionSnapshot(quiz_question_id=1, order=1, content="Q1", type="MC")
@@ -264,7 +264,7 @@ def test_resolve_runtime_session_prefers_resumable_attempt(qtbot, monkeypatch) -
         snapshots=[QuizQuestionSnapshot(quiz_question_id=1, order=1, content="Q1", type="MC")],
         attempt_id=222,
         answers={1: {"selected": "A"}},
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
         remaining_seconds=480,
         submitter_name="Nguyen Van A",
         submitter_id="SV001",
@@ -294,7 +294,7 @@ def test_resolve_runtime_session_rejects_invalid_exam_resume(qtbot, monkeypatch)
         snapshots=[],
         attempt_id=223,
         answers={1: {"selected": "A"}},
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
         remaining_seconds=480,
         submitter_name="",
         submitter_id="",
@@ -304,7 +304,7 @@ def test_resolve_runtime_session_rejects_invalid_exam_resume(qtbot, monkeypatch)
         snapshots=[QuizQuestionSnapshot(quiz_question_id=3, order=1, content="Q3", type="MC")],
         attempt_id=224,
         answers={},
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
         remaining_seconds=600,
         resumed=False,
     )
@@ -353,7 +353,7 @@ def test_resolve_runtime_session_discards_old_attempt_before_restart(qtbot, monk
         snapshots=[],
         attempt_id=333,
         answers={},
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
         remaining_seconds=300,
         resumed=True,
     )
@@ -361,7 +361,7 @@ def test_resolve_runtime_session_discards_old_attempt_before_restart(qtbot, monk
         snapshots=[QuizQuestionSnapshot(quiz_question_id=2, order=1, content="Q2", type="MC")],
         attempt_id=444,
         answers={},
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
         remaining_seconds=600,
         resumed=False,
     )
@@ -406,7 +406,7 @@ def test_runtime_logs_resume_accept_and_finalize_retry(qtbot, monkeypatch) -> No
         snapshots=[QuizQuestionSnapshot(quiz_question_id=1, order=1, content="Q1", type="MC")],
         attempt_id=555,
         answers={1: {"selected": "A"}},
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
         remaining_seconds=300,
         submitter_name="Nguyen Van A",
         submitter_id="SV001",

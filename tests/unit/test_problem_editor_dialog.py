@@ -3,7 +3,13 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QAbstractItemView, QDialog, QInputDialog, QLineEdit, QMessageBox
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
+    QDialog,
+    QLineEdit,
+    QMessageBox,
+)
 
 from core.database.models import Question
 from ui.dialogs.problem_editor_dialog import (
@@ -41,7 +47,7 @@ def test_problem_editor_dialog_defaults(monkeypatch, qtbot) -> None:
     dlg = ProblemEditorDialog(bank_id=1)
     qtbot.addWidget(dlg)
 
-    assert dlg.windowTitle() == "Thêm bài toán"
+    assert dlg.windowTitle() == "Thêm CRQ"
     assert dlg._question_preview_browser is not None
     assert dlg._question_preview_toggle.isChecked() is True
     assert dlg._question_preview_toggle.text() == "Thu gọn"
@@ -91,7 +97,7 @@ def test_problem_editor_dialog_preview_renders_latex(monkeypatch, qtbot) -> None
     assert "Rubric đang chọn" in preview
 
     question_preview = dlg._question_preview_browser.toPlainText()
-    assert "Nội dung bài toán" in question_preview
+    assert "Nội dung CRQ" in question_preview
     assert "Kiểm tra" in question_preview
 
 

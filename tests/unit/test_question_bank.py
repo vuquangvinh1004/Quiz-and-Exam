@@ -6,14 +6,9 @@ file is touched.  Import format and UI are NOT tested here.
 from __future__ import annotations
 
 import json
+
 import pytest
 
-from core.domain.services.question_service import (
-    BankStats,
-    ProblemRubricRow,
-    QuestionEditData,
-    QuestionService,
-)
 from core.database.models import (
     Attempt,
     AttemptAnswer,
@@ -23,8 +18,12 @@ from core.database.models import (
     Quiz,
     QuizQuestion,
 )
-from core.utils.constants import Difficulty, QuestionType
-
+from core.domain.services.question_service import (
+    ProblemRubricRow,
+    QuestionEditData,
+    QuestionService,
+)
+from core.utils.constants import QuestionType
 
 # ──────────────────────────────────────────────
 # Shared fixture helpers
@@ -461,7 +460,8 @@ class TestQuestionCreate:
         payload = json.loads(q.accepted_answers)
 
         assert q.question_type == "ES"
-        assert payload["kind"] == "problem"
+        assert payload["kind"] == "crq"
+        assert payload["subtype"] == "problem"
         assert payload["rubric"][0]["marker"] == "B1"
         assert q.is_problem_question() is True
 
@@ -534,7 +534,7 @@ class TestQuestionValidation:
             problem_rubric=[],
         )
 
-        with pytest.raises(ValueError, match="bài toán"):
+        with pytest.raises(ValueError, match="CRQ"):
             svc.create_question(session, data)
 
     def test_zero_score_raises(self, session, svc, bank):

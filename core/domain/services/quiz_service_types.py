@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
 
 
 @dataclass
@@ -13,7 +12,7 @@ class QuizConfig:
     title: str
     bank_id: int
     mode: str
-    time_limit_minutes: Optional[int]
+    time_limit_minutes: int | None
     question_count: int
     shuffle_questions: bool = True
     shuffle_options: bool = True
@@ -27,7 +26,7 @@ class GradedRow:
 
     quiz_question_id: int
     answer_payload: dict
-    is_correct: Optional[bool]
+    is_correct: bool | None
     score_awarded: float
     feedback_state: str
 
@@ -44,10 +43,10 @@ class QuizQuestionSnapshot:
     explanation: str = ""
     point_value: float = 1.0
     options: list = field(default_factory=list)
-    accepted_answers: Optional[list] = None
+    accepted_answers: list | None = None
     case_sensitive: bool = False
     trim_whitespace: bool = True
-    question_code: Optional[str] = None
+    question_code: str | None = None
 
 
 @dataclass
@@ -61,12 +60,12 @@ class QuizCreationSnapshot:
     explanation: str = ""
     point_value: float = 1.0
     options: list = field(default_factory=list)
-    accepted_answers: Optional[list] = None
+    accepted_answers: list | None = None
     case_sensitive: bool = False
     trim_whitespace: bool = True
 
     @classmethod
-    def from_dict(cls, data: dict) -> "QuizCreationSnapshot":
+    def from_dict(cls, data: dict) -> QuizCreationSnapshot:
         return cls(
             question_id=data["question_id"],
             content=data["content"],
@@ -87,7 +86,7 @@ class QuizInfoDTO:
 
     title: str
     mode: str
-    time_limit: Optional[int]
+    time_limit: int | None
     total: int
 
 

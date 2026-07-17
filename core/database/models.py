@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import (
     Boolean,
@@ -45,15 +44,15 @@ class QuestionBank(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
-    description: Mapped[Optional[str]] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text)
     # Optional metadata used to pre-fill the exam export form
-    school: Mapped[Optional[str]] = mapped_column(Text)
-    department: Mapped[Optional[str]] = mapped_column(Text)
-    subject: Mapped[Optional[str]] = mapped_column(Text)
-    course_code: Mapped[Optional[str]] = mapped_column(Text)
-    exam_title: Mapped[Optional[str]] = mapped_column(Text)
-    assessment_type: Mapped[Optional[str]] = mapped_column(Text)
-    course_learning_outcomes: Mapped[Optional[str]] = mapped_column(Text)  # JSON list
+    school: Mapped[str | None] = mapped_column(Text)
+    department: Mapped[str | None] = mapped_column(Text)
+    subject: Mapped[str | None] = mapped_column(Text)
+    course_code: Mapped[str | None] = mapped_column(Text)
+    exam_title: Mapped[str | None] = mapped_column(Text)
+    assessment_type: Mapped[str | None] = mapped_column(Text)
+    course_learning_outcomes: Mapped[str | None] = mapped_column(Text)  # JSON list
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.current_timestamp()
     )
@@ -63,10 +62,10 @@ class QuestionBank(Base):
         onupdate=func.current_timestamp(),
     )
 
-    questions: Mapped[list["Question"]] = relationship(
+    questions: Mapped[list[Question]] = relationship(
         "Question", back_populates="bank", cascade="all, delete-orphan"
     )
-    quizzes: Mapped[list["Quiz"]] = relationship(
+    quizzes: Mapped[list[Quiz]] = relationship(
         "Quiz", back_populates="bank", cascade="all, delete-orphan"
     )
 
@@ -129,17 +128,17 @@ class Question(Base):
     bank_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("question_banks.id", ondelete="CASCADE"), nullable=False
     )
-    question_code: Mapped[Optional[str]] = mapped_column(Text, unique=True)
+    question_code: Mapped[str | None] = mapped_column(Text, unique=True)
     question_type: Mapped[str] = mapped_column(Text, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    hint: Mapped[Optional[str]] = mapped_column(Text)
-    explanation: Mapped[Optional[str]] = mapped_column(Text)
-    difficulty: Mapped[Optional[str]] = mapped_column(Text)
-    learning_outcome_code: Mapped[Optional[str]] = mapped_column(Text)
-    category: Mapped[Optional[str]] = mapped_column(Text)
-    tags: Mapped[Optional[str]] = mapped_column(Text)
+    hint: Mapped[str | None] = mapped_column(Text)
+    explanation: Mapped[str | None] = mapped_column(Text)
+    difficulty: Mapped[str | None] = mapped_column(Text)
+    learning_outcome_code: Mapped[str | None] = mapped_column(Text)
+    category: Mapped[str | None] = mapped_column(Text)
+    tags: Mapped[str | None] = mapped_column(Text)
     # JSON string for BLANK/SA accepted answers; NULL for MC/MA
-    accepted_answers: Mapped[Optional[str]] = mapped_column(Text)
+    accepted_answers: Mapped[str | None] = mapped_column(Text)
     point_value: Mapped[float] = mapped_column(Float, default=1.0)
     case_sensitive: Mapped[bool] = mapped_column(Boolean, default=False)
     trim_whitespace: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -153,8 +152,8 @@ class Question(Base):
         onupdate=func.current_timestamp(),
     )
 
-    bank: Mapped["QuestionBank"] = relationship("QuestionBank", back_populates="questions")
-    options: Mapped[list["QuestionOption"]] = relationship(
+    bank: Mapped[QuestionBank] = relationship("QuestionBank", back_populates="questions")
+    options: Mapped[list[QuestionOption]] = relationship(
         "QuestionOption", back_populates="question", cascade="all, delete-orphan",
         order_by="QuestionOption.sort_order",
     )
@@ -352,7 +351,7 @@ class QuestionOption(Base):
     is_correct: Mapped[bool] = mapped_column(Boolean, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    question: Mapped["Question"] = relationship("Question", back_populates="options")
+    question: Mapped[Question] = relationship("Question", back_populates="options")
 
     def __repr__(self) -> str:
         return (
@@ -382,7 +381,7 @@ class Quiz(Base):
         Integer, ForeignKey("question_banks.id", ondelete="CASCADE"), nullable=False
     )
     mode: Mapped[str] = mapped_column(Text, nullable=False)
-    time_limit_minutes: Mapped[Optional[int]] = mapped_column(Integer)
+    time_limit_minutes: Mapped[int | None] = mapped_column(Integer)
     shuffle_questions: Mapped[bool] = mapped_column(Boolean, default=True)
     shuffle_options: Mapped[bool] = mapped_column(Boolean, default=True)
     show_hint_in_practice: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -397,12 +396,12 @@ class Quiz(Base):
         onupdate=func.current_timestamp(),
     )
 
-    bank: Mapped["QuestionBank"] = relationship("QuestionBank", back_populates="quizzes")
-    quiz_questions: Mapped[list["QuizQuestion"]] = relationship(
+    bank: Mapped[QuestionBank] = relationship("QuestionBank", back_populates="quizzes")
+    quiz_questions: Mapped[list[QuizQuestion]] = relationship(
         "QuizQuestion", back_populates="quiz", cascade="all, delete-orphan",
         order_by="QuizQuestion.question_order",
     )
-    attempts: Mapped[list["Attempt"]] = relationship(
+    attempts: Mapped[list[Attempt]] = relationship(
         "Attempt", back_populates="quiz", cascade="all, delete-orphan"
     )
 
@@ -433,16 +432,16 @@ class QuizQuestion(Base):
     question_order: Mapped[int] = mapped_column(Integer, nullable=False)
     snapshot_content: Mapped[str] = mapped_column(Text, nullable=False)
     snapshot_type: Mapped[str] = mapped_column(Text, nullable=False)
-    snapshot_hint: Mapped[Optional[str]] = mapped_column(Text)
-    snapshot_explanation: Mapped[Optional[str]] = mapped_column(Text)
+    snapshot_hint: Mapped[str | None] = mapped_column(Text)
+    snapshot_explanation: Mapped[str | None] = mapped_column(Text)
     snapshot_point_value: Mapped[float] = mapped_column(Float, default=1.0)
     # JSON string – serialized list of {key, text, is_correct}
-    snapshot_options: Mapped[Optional[str]] = mapped_column(Text)
+    snapshot_options: Mapped[str | None] = mapped_column(Text)
     # JSON string – list of accepted answer strings (for BLANK/SA)
-    snapshot_accepted_answers: Mapped[Optional[str]] = mapped_column(Text)
+    snapshot_accepted_answers: Mapped[str | None] = mapped_column(Text)
 
-    quiz: Mapped["Quiz"] = relationship("Quiz", back_populates="quiz_questions")
-    attempt_answers: Mapped[list["AttemptAnswer"]] = relationship(
+    quiz: Mapped[Quiz] = relationship("Quiz", back_populates="quiz_questions")
+    attempt_answers: Mapped[list[AttemptAnswer]] = relationship(
         "AttemptAnswer", back_populates="quiz_question", cascade="all, delete-orphan"
     )
 
@@ -515,19 +514,19 @@ class Attempt(Base):
     started_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.current_timestamp()
     )
-    submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    duration_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer)
     answered_count: Mapped[int] = mapped_column(Integer, default=0)
     correct_count: Mapped[int] = mapped_column(Integer, default=0)
     incorrect_count: Mapped[int] = mapped_column(Integer, default=0)
     skipped_count: Mapped[int] = mapped_column(Integer, default=0)
     score: Mapped[float] = mapped_column(Float, default=0.0)
     max_score: Mapped[float] = mapped_column(Float, default=0.0)
-    remaining_seconds: Mapped[Optional[int]] = mapped_column(Integer)
-    extra_data: Mapped[Optional[str]] = mapped_column(Text)  # JSON blob (renamed from metadata)
+    remaining_seconds: Mapped[int | None] = mapped_column(Integer)
+    extra_data: Mapped[str | None] = mapped_column(Text)  # JSON blob (renamed from metadata)
 
-    quiz: Mapped["Quiz"] = relationship("Quiz", back_populates="attempts")
-    answers: Mapped[list["AttemptAnswer"]] = relationship(
+    quiz: Mapped[Quiz] = relationship("Quiz", back_populates="attempts")
+    answers: Mapped[list[AttemptAnswer]] = relationship(
         "AttemptAnswer", back_populates="attempt", cascade="all, delete-orphan"
     )
 
@@ -558,16 +557,16 @@ class AttemptAnswer(Base):
         Integer, ForeignKey("quiz_questions.id", ondelete="CASCADE"), nullable=False
     )
     # JSON string e.g. {"selected":"B"} or {"text":"EOQ"} – see ARCHITECTURE §8.4
-    answer_payload: Mapped[Optional[str]] = mapped_column(Text)
+    answer_payload: Mapped[str | None] = mapped_column(Text)
     is_answered: Mapped[bool] = mapped_column(Boolean, default=False)
-    is_correct: Mapped[Optional[bool]] = mapped_column(Boolean)
+    is_correct: Mapped[bool | None] = mapped_column(Boolean)
     score_awarded: Mapped[float] = mapped_column(Float, default=0.0)
     # One of: 'correct', 'incorrect', 'skipped', 'pending'
-    feedback_state: Mapped[Optional[str]] = mapped_column(Text)
-    answered_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    feedback_state: Mapped[str | None] = mapped_column(Text)
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime)
 
-    attempt: Mapped["Attempt"] = relationship("Attempt", back_populates="answers")
-    quiz_question: Mapped["QuizQuestion"] = relationship(
+    attempt: Mapped[Attempt] = relationship("Attempt", back_populates="answers")
+    quiz_question: Mapped[QuizQuestion] = relationship(
         "QuizQuestion", back_populates="attempt_answers"
     )
 
@@ -589,7 +588,7 @@ class AppSetting(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     setting_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
-    setting_value: Mapped[Optional[str]] = mapped_column(Text)
+    setting_value: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         server_default=func.current_timestamp(),

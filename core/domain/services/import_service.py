@@ -30,11 +30,10 @@ from core.utils.exceptions import ImportValidationError
 from core.utils.logger import get_logger
 from modules.question_bank.duplicate_detector import DuplicateDetector
 from modules.question_bank.importer import (
-    ParseResult,
     ParsedQuestion,
+    ParseResult,
     QuestionFileParser,
 )
-
 
 # ---------------------------------------------------------------------------
 # Return types
@@ -89,15 +88,10 @@ class ImportService:
         # Keep issues sorted by row number for easier reading
         result.issues.sort(key=lambda i: (i.row, i.severity))
         self._logger.info(
-            "event=import_preview_completed file=%s total_rows=%s parsed=%s errors=%s warnings=%s infos=%s"
-            % (
-                file_path.name,
-                result.total_rows,
-                len(result.parsed_questions),
-                result.error_count,
-                result.warning_count,
-                result.info_count,
-            )
+            f"event=import_preview_completed file={file_path.name} "
+            f"total_rows={result.total_rows} parsed={len(result.parsed_questions)} "
+            f"errors={result.error_count} warnings={result.warning_count} "
+            f"infos={result.info_count}"
         )
         return result
 
@@ -124,8 +118,8 @@ class ImportService:
                 if issue.severity == "ERROR"
             ]
             self._logger.warning(
-                "event=import_commit_blocked errors=%s total_rows=%s"
-                % (len(errors), parse_result.total_rows)
+                f"event=import_commit_blocked errors={len(errors)} "
+                f"total_rows={parse_result.total_rows}"
             )
             raise ImportValidationError(errors)
 
@@ -166,14 +160,14 @@ class ImportService:
             if inserted % self._commit_batch_size == 0:
                 session.flush()
                 self._logger.info(
-                    "event=import_commit_batch_flushed inserted=%s batch_size=%s"
-                    % (inserted, self._commit_batch_size)
+                    f"event=import_commit_batch_flushed inserted={inserted} "
+                    f"batch_size={self._commit_batch_size}"
                 )
 
         session.flush()
         self._logger.info(
-            "event=import_commit_completed inserted=%s skipped=%s batch_size=%s"
-            % (inserted, len(skip_rows), self._commit_batch_size)
+            f"event=import_commit_completed inserted={inserted} "
+            f"skipped={len(skip_rows)} batch_size={self._commit_batch_size}"
         )
 
         return ImportSummary(

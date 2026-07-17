@@ -13,10 +13,10 @@ import json
 import os
 import tempfile
 import uuid
+from contextlib import suppress
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 from config.paths import EXPORTS_DIR
 from core.utils.logger import get_logger
@@ -78,10 +78,8 @@ class PendingGSheetsQueue:
                 json.dump(items, f, ensure_ascii=False, indent=2)
             Path(tmp).replace(_QUEUE_FILE)
         except Exception:
-            try:
+            with suppress(OSError):
                 os.unlink(tmp)
-            except OSError:
-                pass
             raise
 
     # ------------------------------------------------------------------ #
@@ -96,10 +94,8 @@ class PendingGSheetsQueue:
         """Return all pending items as PendingItem objects."""
         items = []
         for d in self._load():
-            try:
+            with suppress(TypeError):
                 items.append(PendingItem(**d))
-            except TypeError:
-                pass  # skip malformed entries
         return items
 
     def push(
@@ -117,7 +113,7 @@ class PendingGSheetsQueue:
         """Add a new pending item. Returns the new item_id."""
         item = PendingItem(
             item_id=str(uuid.uuid4()),
-            queued_at=datetime.now(timezone.utc).isoformat(),
+            queued_at=datetime.now(UTC).isoformat(),
             quiz_title=quiz_title,
             submitter_name=submitter_name,
             submitter_id=submitter_id,
@@ -190,7 +186,7 @@ class PendingGSheetsQueue:
         except gspread.exceptions.SpreadsheetNotFound:
             raise gspread.exceptions.SpreadsheetNotFound(
                 f"Không tìm thấy Google Sheet.\nURL: {item.gsheets_url}"
-            )
+            ) from None
 
         try:
             ws = sh.worksheet(TARGET_WORKSHEET)

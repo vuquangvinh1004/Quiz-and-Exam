@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from sqlalchemy.exc import SQLAlchemyError
-from core.database.models import Question
 
+from core.database.models import Question
 from ui.facades.question_bank_facade import QuestionBankFacade
 from ui.views.question_bank_view import QuestionBankView
 
@@ -232,4 +232,4 @@ def test_question_bank_add_problem_handles_constructor_errors(monkeypatch, qtbot
 
     view._add_problem()
 
-    assert errors == [("Lỗi", "Không thể mở cửa sổ thêm bài toán.")]
+    assert errors == [("Lỗi", "Không thể mở cửa sổ thêm CRQ.")]

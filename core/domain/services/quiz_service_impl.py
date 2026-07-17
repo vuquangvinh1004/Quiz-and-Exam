@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -123,11 +123,13 @@ class QuizCatalogService:
             raise ValueError("Tên bài kiểm tra không được để trống.")
         if config.mode not in (m.value for m in QuizMode):
             raise ValueError(f"Mode không hợp lệ: {config.mode}")
-        if config.mode in (QuizMode.EXAM.value, QuizMode.PRACTICE.value):
-            if not config.time_limit_minutes or config.time_limit_minutes <= 0:
-                raise ValueError(
-                    "Chế độ Kiểm tra và Luyện tập cần giới hạn thời gian > 0 phút."
-                )
+        if (
+            config.mode in (QuizMode.EXAM.value, QuizMode.PRACTICE.value)
+            and (not config.time_limit_minutes or config.time_limit_minutes <= 0)
+        ):
+            raise ValueError(
+                "Chế độ Kiểm tra và Luyện tập cần giới hạn thời gian > 0 phút."
+            )
         if question_count < 1:
             raise ValueError("Bài kiểm tra cần ít nhất 1 câu hỏi.")
 
@@ -199,7 +201,7 @@ class QuizAttemptService:
             json.dumps(payload, ensure_ascii=False) if payload else None
         )
         aa.is_answered = bool(payload)
-        aa.answered_at = datetime.now(timezone.utc)
+        aa.answered_at = datetime.now(UTC)
         session.flush()
         return aa
 
@@ -300,7 +302,7 @@ class QuizAttemptService:
                 aa.is_correct = row.is_correct
                 aa.score_awarded = row.score_awarded
                 aa.feedback_state = row.feedback_state
-                aa.answered_at = aa.answered_at or datetime.now(timezone.utc)
+                aa.answered_at = aa.answered_at or datetime.now(UTC)
 
             if row.feedback_state == "skipped":
                 skipped += 1
@@ -313,7 +315,7 @@ class QuizAttemptService:
             total_score += row.score_awarded
 
         attempt.status = status
-        attempt.submitted_at = datetime.now(timezone.utc)
+        attempt.submitted_at = datetime.now(UTC)
         attempt.duration_seconds = duration_seconds
         attempt.remaining_seconds = 0
         attempt.answered_count = answered
@@ -350,8 +352,8 @@ class QuizAttemptService:
         if value is None:
             return None
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
 
 class QuizGradingService:

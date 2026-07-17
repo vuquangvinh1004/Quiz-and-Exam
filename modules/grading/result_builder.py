@@ -15,11 +15,9 @@ from __future__ import annotations
 import io
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
 
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
-
 
 # ---------------------------------------------------------------------------
 # Data transfer objects
@@ -32,10 +30,10 @@ class QuestionResultRow:
     order: int
     question_text: str
     answer_text: str            # human-readable answer (or "Bỏ qua" if unanswered)
-    is_correct: Optional[bool]  # None = not graded / pending
+    is_correct: bool | None  # None = not graded / pending
     score_awarded: float
     max_score: float
-    question_code: Optional[str] = None      # original question_code from bank
+    question_code: str | None = None      # original question_code from bank
     correct_answer_display: str = ""         # human-readable correct answer(s)
 
 
@@ -178,7 +176,7 @@ class ExamResultExporter:
         return f"{hours} giờ {mins} phút {secs} giây"
 
     @staticmethod
-    def _result_text(is_correct: Optional[bool]) -> str:
+    def _result_text(is_correct: bool | None) -> str:
         if is_correct is True:
             return "Đúng ✓"
         if is_correct is False:
@@ -207,7 +205,7 @@ class ModeSummaryBuilder:
     }
 
     @classmethod
-    def build_html(cls, data: "AttemptResultData") -> str:
+    def build_html(cls, data: AttemptResultData) -> str:
         """Return an HTML string suitable for a QLabel or QMessageBox.
 
         Parameters

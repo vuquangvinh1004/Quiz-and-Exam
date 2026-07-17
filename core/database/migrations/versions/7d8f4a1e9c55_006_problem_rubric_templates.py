@@ -5,17 +5,16 @@ Revises: f2b1c8d4e902
 Create Date: 2026-07-14 00:00:00.000000
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "7d8f4a1e9c55"
-down_revision: Union[str, Sequence[str], None] = "f2b1c8d4e902"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "f2b1c8d4e902"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -53,4 +52,3 @@ def downgrade() -> None:
     """Downgrade schema."""
     op.drop_index("ix_question_rubric_templates_bank_id", table_name="question_rubric_templates")
     op.drop_table("question_rubric_templates")
-

@@ -6,7 +6,6 @@ Use ``get_engine()`` for a fresh engine (tests) or the module singleton.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from sqlalchemy import Engine, create_engine
 
@@ -14,7 +13,7 @@ from config.paths import DB_PATH, ensure_data_dirs
 from core.database.models import Base
 
 
-def create_db_engine(db_path: Optional[Path] = None) -> Engine:
+def create_db_engine(db_path: Path | None = None) -> Engine:
     """Create and return a SQLAlchemy Engine.
 
     Args:

@@ -12,11 +12,10 @@ by the UI layer (result_history_view.py / AttemptDetailDialog).
 from __future__ import annotations
 
 import json
-from typing import Optional
 
 from sqlalchemy.orm import Session, joinedload
 
-from core.database.models import Attempt, AttemptAnswer, Quiz, QuizQuestion
+from core.database.models import Attempt, AttemptAnswer
 
 
 def _score_pct(score: float, max_score: float) -> float:
@@ -56,7 +55,7 @@ class HistoryService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def get_attempt_detail(session: Session, attempt_id: int) -> Optional[dict]:
+    def get_attempt_detail(session: Session, attempt_id: int) -> dict | None:
         """Return full attempt data including sorted per-question answers.
 
         Returns None if attempt_id is not found.

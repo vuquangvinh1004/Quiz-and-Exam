@@ -10,15 +10,13 @@ Validates:
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Import helper
 # ---------------------------------------------------------------------------
-
 from modules.google_sheets.submitter import GoogleSheetsSubmitter
 
 _retry = GoogleSheetsSubmitter._retry_on_transient
@@ -74,18 +72,16 @@ class TestRetryableStatusCodes:
     @pytest.mark.parametrize("status", [429, 500, 502, 503, 504])
     def test_retryable_status_retries_and_raises_after_max(self, status):
         fn = MagicMock(side_effect=_make_api_error(status))
-        with patch("time.sleep"):
-            with pytest.raises(Exception):
-                _retry(fn, max_retries=3)
+        with patch("time.sleep"), pytest.raises(type(_make_api_error(status))):
+            _retry(fn, max_retries=3)
         assert fn.call_count == 3
 
     @pytest.mark.parametrize("status", [429, 500, 503])
     def test_retryable_uses_exponential_backoff(self, status):
         fn = MagicMock(side_effect=_make_api_error(status))
         sleep_mock = MagicMock()
-        with patch("time.sleep", sleep_mock):
-            with pytest.raises(Exception):
-                _retry(fn, max_retries=3)
+        with patch("time.sleep", sleep_mock), pytest.raises(type(_make_api_error(status))):
+            _retry(fn, max_retries=3)
         # Exponential backoff: 2^0=1s, 2^1=2s, 2^2=4s (last attempt doesn't sleep)
         sleep_calls = [c.args[0] for c in sleep_mock.call_args_list]
         assert sleep_calls == [1, 2, 4]
@@ -100,9 +96,8 @@ class TestNonRetryableStatusCode:
     @pytest.mark.parametrize("status", [400, 401, 403, 404])
     def test_non_retryable_raises_immediately(self, status):
         fn = MagicMock(side_effect=_make_api_error(status))
-        with patch("time.sleep"):
-            with pytest.raises(Exception):
-                _retry(fn, max_retries=3)
+        with patch("time.sleep"), pytest.raises(type(_make_api_error(status))):
+            _retry(fn, max_retries=3)
         fn.assert_called_once()  # no retry, raised immediately
 
 
@@ -115,9 +110,8 @@ class TestNetworkErrors:
     @pytest.mark.parametrize("exc_cls", [ConnectionError, TimeoutError, OSError])
     def test_network_error_retried(self, exc_cls):
         fn = MagicMock(side_effect=exc_cls("network failure"))
-        with patch("time.sleep"):
-            with pytest.raises(exc_cls):
-                _retry(fn, max_retries=3)
+        with patch("time.sleep"), pytest.raises(exc_cls):
+            _retry(fn, max_retries=3)
         assert fn.call_count == 3
 
     def test_network_error_success_on_retry(self):
@@ -142,14 +136,12 @@ class TestMaxRetriesBoundary:
 
     def test_max_retries_1_does_not_retry(self):
         fn = MagicMock(side_effect=_make_api_error(429))
-        with patch("time.sleep"):
-            with pytest.raises(Exception):
-                _retry(fn, max_retries=1)
+        with patch("time.sleep"), pytest.raises(type(_make_api_error(429))):
+            _retry(fn, max_retries=1)
         fn.assert_called_once()
 
     def test_max_retries_0_raises_immediately(self):
         fn = MagicMock()
-        with patch("time.sleep"):
-            with pytest.raises(RuntimeError, match="no attempts"):
-                _retry(fn, max_retries=0)
+        with patch("time.sleep"), pytest.raises(RuntimeError, match="no attempts"):
+            _retry(fn, max_retries=0)
         fn.assert_not_called()

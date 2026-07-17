@@ -1,12 +1,12 @@
 """Unit tests for dashboard facade overview loading."""
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from core.database.connection import create_db_engine, init_db
-from datetime import datetime, timedelta, timezone
 
+from core.database.connection import create_db_engine, init_db
 from core.database.models import Attempt, Question, QuestionBank, Quiz
 from core.database.session import get_session, reset_session_factory
 from ui.facades.dashboard_facade import DashboardFacade
@@ -75,7 +75,7 @@ def test_load_overview_includes_attempt_analytics(tmp_path) -> None:
                     correct_count=8,
                     incorrect_count=1,
                     skipped_count=1,
-                    submitted_at=datetime.now(timezone.utc) - timedelta(days=1),
+                    submitted_at=datetime.now(UTC) - timedelta(days=1),
                 ),
                 Attempt(
                     quiz_id=quiz.id,
@@ -86,7 +86,7 @@ def test_load_overview_includes_attempt_analytics(tmp_path) -> None:
                     correct_count=6,
                     incorrect_count=2,
                     skipped_count=2,
-                    submitted_at=datetime.now(timezone.utc) - timedelta(days=2),
+                    submitted_at=datetime.now(UTC) - timedelta(days=2),
                 ),
                 Attempt(
                     quiz_id=quiz.id,
@@ -152,7 +152,7 @@ def test_load_filtered_reporting_returns_snapshot(tmp_path) -> None:
                 correct_count=7,
                 incorrect_count=2,
                 skipped_count=1,
-                submitted_at=datetime.now(timezone.utc) - timedelta(days=1),
+                submitted_at=datetime.now(UTC) - timedelta(days=1),
             )
         )
 
@@ -198,7 +198,7 @@ def test_export_reporting_csv_writes_expected_sections(tmp_path) -> None:
                 correct_count=9,
                 incorrect_count=1,
                 skipped_count=0,
-                submitted_at=datetime.now(timezone.utc) - timedelta(days=1),
+                submitted_at=datetime.now(UTC) - timedelta(days=1),
             )
         )
 

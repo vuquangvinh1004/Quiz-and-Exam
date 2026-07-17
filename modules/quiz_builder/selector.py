@@ -9,7 +9,6 @@ No UI logic here – pure data-layer operations.
 from __future__ import annotations
 
 import random
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -45,10 +44,10 @@ class QuestionSelector:
         session: Session,
         bank_id: int,
         count: int,
-        question_types: Optional[list[str]] = None,
-        difficulties: Optional[list[str]] = None,
-        chapters: Optional[list[str]] = None,
-        candidate_question_ids: Optional[list[int]] = None,
+        question_types: list[str] | None = None,
+        difficulties: list[str] | None = None,
+        chapters: list[str] | None = None,
+        candidate_question_ids: list[int] | None = None,
         active_only: bool = True,
         shuffle: bool = True,
     ) -> list[Question]:
@@ -77,10 +76,10 @@ class QuestionSelector:
         self,
         session: Session,
         bank_id: int,
-        question_types: Optional[list[str]] = None,
-        difficulties: Optional[list[str]] = None,
-        chapters: Optional[list[str]] = None,
-        candidate_question_ids: Optional[list[int]] = None,
+        question_types: list[str] | None = None,
+        difficulties: list[str] | None = None,
+        chapters: list[str] | None = None,
+        candidate_question_ids: list[int] | None = None,
         active_only: bool = True,
     ) -> int:
         """Return how many questions match the given filters."""

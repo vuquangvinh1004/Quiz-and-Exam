@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
 
 from core.database.models import Question
 from core.domain.services.question_service import QuestionEditData
+from core.utils.blank_rendering import render_blank_placeholders
 from core.utils.constants import (
     BLANK_PLACEHOLDER,
     VALID_OPTION_LABELS,
@@ -162,6 +163,11 @@ class QuestionEditorDialog(QDialog):
             self._content_edit.setPlaceholderText(
                 "Nhập nội dung câu hỏi…\n"
                 f"Với loại Điền vào chỗ trống, dùng {BLANK_PLACEHOLDER} để đánh dấu chỗ trống."
+            )
+            self._content_edit.setToolTip(
+                "Với câu hỏi Điền vào chỗ trống, dùng [[blank]] hoặc 8 gạch dưới "
+                "________ để đánh dấu chỗ trống.\n"
+                "Ví dụ: Thang đo [[blank]]"
             )
             self._content_edit.setFixedHeight(90)
             self._content_edit.textChanged.connect(self._refresh_formula_preview)
@@ -295,6 +301,10 @@ class QuestionEditorDialog(QDialog):
         )
         blank_hint.setTextFormat(Qt.TextFormat.RichText)
         blank_hint.setWordWrap(True)
+        blank_hint.setToolTip(
+            "Hiển thị mặc định của [[blank]] là 8 gạch dưới ________. "
+            "Bạn có thể nhập [[blank]] hoặc 8 gạch dưới để đánh dấu chỗ trống."
+        )
         ans_fl.addRow(blank_hint)
         form_layout.addWidget(self._answers_group)
 
@@ -577,6 +587,9 @@ class QuestionEditorDialog(QDialog):
             if text:
                 return f"<div class='text'>{render_inline_latex_html(text)}</div>"
             return f"<div class='empty'>{empty}</div>"
+
+        if qt == QuestionType.BLANK:
+            content = render_blank_placeholders(content)
 
         html_parts = [
             "<html><head><style>",

@@ -5,10 +5,10 @@ and imported from here. Do not redefine them elsewhere.
 """
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 
-class QuestionType(str, Enum):
+class QuestionType(StrEnum):
     """Types of questions supported by the application.
 
     DB stores short codes (MC, MA, BLANK, TF, SA, ES).
@@ -25,7 +25,7 @@ class QuestionType(str, Enum):
     PROBLEM = "PR"
 
 
-class QuestionFamily(str, Enum):
+class QuestionFamily(StrEnum):
     """Higher-level question families used for grouped UI labels."""
 
     CONSTRUCTED_RESPONSE = "CRQ"
@@ -55,7 +55,7 @@ def is_crq_question_type(value: QuestionType | str) -> bool:
     return raw in {qt.value for qt in CRQ_QUESTION_TYPES}
 
 
-class QuizMode(str, Enum):
+class QuizMode(StrEnum):
     """The three quiz modes with distinct business rules."""
 
     EXAM = "EXAM"
@@ -63,7 +63,7 @@ class QuizMode(str, Enum):
     STUDY = "STUDY"
 
 
-class AttemptStatus(str, Enum):
+class AttemptStatus(StrEnum):
     """Lifecycle states for a quiz attempt."""
 
     IN_PROGRESS = "IN_PROGRESS"
@@ -72,7 +72,7 @@ class AttemptStatus(str, Enum):
     COMPLETED = "COMPLETED"
 
 
-class Difficulty(str, Enum):
+class Difficulty(StrEnum):
     """Question difficulty levels (matches import format)."""
 
     EASY = "easy"
@@ -80,7 +80,7 @@ class Difficulty(str, Enum):
     HARD = "hard"
 
 
-class QuestionStatus(str, Enum):
+class QuestionStatus(StrEnum):
     """Active/inactive flag for a question."""
 
     ACTIVE = "active"

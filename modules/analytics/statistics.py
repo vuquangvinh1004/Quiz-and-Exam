@@ -10,11 +10,10 @@ incomplete data.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 
 from sqlalchemy import Float, case, cast, func
-from sqlalchemy.orm import Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Query, Session
 
 from core.database.models import Attempt, Quiz
 from core.utils.constants import AttemptStatus
@@ -187,7 +186,7 @@ class AttemptStatistics:
             if row.day is not None
         }
 
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
         points: list[AttemptTrendPoint] = []
         for offset in range(days - 1, -1, -1):
             day = today - timedelta(days=offset)
@@ -401,7 +400,7 @@ class AttemptStatistics:
             last_at = row.last_activity_at
             last_label = ""
             if isinstance(last_at, datetime):
-                last_label = last_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M")
+                last_label = last_at.astimezone(UTC).strftime("%Y-%m-%d %H:%M")
             elif last_at is not None:
                 last_label = str(last_at)
             items.append(
@@ -453,8 +452,8 @@ class AttemptStatistics:
             end_date=end_date,
         )
         if range_start is not None and range_end is not None:
-            since = datetime.combine(range_start, time.min, tzinfo=timezone.utc)
-            until = datetime.combine(range_end, time.max, tzinfo=timezone.utc)
+            since = datetime.combine(range_start, time.min, tzinfo=UTC)
+            until = datetime.combine(range_end, time.max, tzinfo=UTC)
             activity_col = func.coalesce(Attempt.submitted_at, Attempt.started_at)
             query = query.filter(activity_col >= since)
             query = query.filter(activity_col <= until)
@@ -473,5 +472,5 @@ class AttemptStatistics:
             return start_date, end_date
         if days <= 0:
             return None, None
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
         return today - timedelta(days=days - 1), today

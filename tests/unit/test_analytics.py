@@ -10,13 +10,12 @@ Tests:
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from core.database.models import Attempt, QuestionBank, Quiz
 from modules.analytics.statistics import AttemptStatistics, AttemptStats
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -205,7 +204,7 @@ class TestGetOverallStats:
     def test_recent_activity_returns_points_for_requested_window(self, db_session):
         bank = _make_bank(db_session)
         quiz = _make_quiz(db_session, bank.id)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         _make_attempt(
             db_session,
             quiz.id,
@@ -235,7 +234,7 @@ class TestGetOverallStats:
         bank2 = _make_bank(db_session, "Bank2")
         quiz1 = _make_quiz(db_session, bank1.id)
         quiz2 = _make_quiz(db_session, bank2.id)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         _make_attempt(
             db_session,
             quiz1.id,
@@ -282,7 +281,7 @@ class TestGetOverallStats:
         quiz1 = _make_quiz(db_session, bank1.id)
         quiz2 = _make_quiz(db_session, bank1.id)
         quiz3 = _make_quiz(db_session, bank2.id)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         _make_attempt(
             db_session,
             quiz1.id,
@@ -325,7 +324,7 @@ class TestGetOverallStats:
     def test_filtered_reporting_supports_custom_date_range(self, db_session):
         bank = _make_bank(db_session, "Bank Date")
         quiz = _make_quiz(db_session, bank.id)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         _make_attempt(
             db_session,
             quiz.id,

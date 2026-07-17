@@ -12,28 +12,27 @@ from __future__ import annotations
 
 import csv
 import io
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from core.utils.constants import (
-    BLANK_PLACEHOLDER,
-    LEGACY_BLANK_PLACEHOLDER,
     DEFAULT_DIFFICULTY,
     DEFAULT_SCORE,
     DEFAULT_STATUS,
+    LEGACY_BLANK_PLACEHOLDER,
     MULTI_VALUE_DELIMITER,
     QUESTION_TYPE_IMPORT_MAP,
-    VALID_OPTION_LABELS,
     Difficulty,
     QuestionStatus,
     QuestionType,
 )
+from core.utils.logger import get_logger
 from core.utils.validators import (
     count_blank_placeholders,
     validate_correct_answers_for_type,
 )
-from core.utils.logger import get_logger
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -251,8 +250,8 @@ class QuestionFileParser:
                     ),
                 ))
                 logger.warning(
-                    "event=import_row_limit_exceeded rows=%s hard_limit=%s"
-                    % (idx, self._hard_row_limit)
+                    f"event=import_row_limit_exceeded rows={idx} "
+                    f"hard_limit={self._hard_row_limit}"
                 )
                 break
             if idx > self._soft_row_limit and not soft_limit_warning_added:
@@ -300,8 +299,8 @@ class QuestionFileParser:
                 ),
             ))
             logger.warning(
-                "event=import_file_too_large path=%s size=%s hard_limit=%s"
-                % (path.name, file_size, self._hard_file_size_bytes)
+                f"event=import_file_too_large path={path.name} size={file_size} "
+                f"hard_limit={self._hard_file_size_bytes}"
             )
             return [], result
         if file_size > self._soft_file_size_bytes:
@@ -315,8 +314,8 @@ class QuestionFileParser:
                 ),
             ))
             logger.warning(
-                "event=import_file_size_warning path=%s size=%s soft_limit=%s"
-                % (path.name, file_size, self._soft_file_size_bytes)
+                f"event=import_file_size_warning path={path.name} size={file_size} "
+                f"soft_limit={self._soft_file_size_bytes}"
             )
         return issues, None
 

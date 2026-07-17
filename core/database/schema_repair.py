@@ -4,7 +4,6 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-
 _LEGACY_QUESTION_TYPE_CONSTRAINT = "question_type IN ('MC', 'MA', 'BLANK', 'SA')"
 _CURRENT_QUESTION_TYPE_CONSTRAINT = "question_type IN ('MC', 'MA', 'BLANK', 'TF', 'SA', 'ES', 'PR')"
 
@@ -101,11 +100,12 @@ def repair_questions_type_constraint(db_path: Path) -> bool:
 
         cur.execute("PRAGMA foreign_keys=OFF")
         cur.execute("BEGIN")
+        create_columns_sql = ",\n                    ".join(create_columns)
         try:
             cur.executescript(
                 f"""
                 CREATE TABLE questions_new (
-                    {",\n                    ".join(create_columns)},
+                    {create_columns_sql},
                     CONSTRAINT ck_questions_type CHECK ({_CURRENT_QUESTION_TYPE_CONSTRAINT}),
                     CONSTRAINT uq_questions_question_code UNIQUE (question_code),
                     CONSTRAINT fk_questions_bank_id FOREIGN KEY(bank_id) REFERENCES question_banks (id) ON DELETE CASCADE

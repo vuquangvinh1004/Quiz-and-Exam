@@ -14,10 +14,8 @@ Each integration test is self-contained: uses an isolated in-memory DB.
 """
 from __future__ import annotations
 
-import csv
 import io
-import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import create_engine
@@ -31,7 +29,6 @@ from core.domain.services.quiz_service import GradedRow, QuizConfig, QuizService
 from core.utils.constants import AttemptStatus, QuizMode
 from modules.quiz_builder.selector import QuestionSelector
 from modules.quiz_runner.submit_handler import build_graded_result
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -424,7 +421,7 @@ class TestE2EStudyModeFullFlow:
         graded_rows, result = build_graded_result(
             quiz_questions=typed_questions,
             answers=answers,
-            started_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
             submitter_name="",
             submitter_id="",
             quiz_title=quiz.title,

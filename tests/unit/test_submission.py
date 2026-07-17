@@ -8,23 +8,21 @@ Covers:
 from __future__ import annotations
 
 import io
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
 
 import openpyxl
 import pytest
 
-from modules.grading.result_builder import (
-    AttemptResultData,
-    ExamResultExporter,
-    QuestionResultRow,
-)
 from core.domain.services.submission_service import (
     SubmissionService,
     SubmissionSettings,
 )
 from core.utils.exceptions import SubmissionConfigError
-
+from modules.grading.result_builder import (
+    AttemptResultData,
+    ExamResultExporter,
+    QuestionResultRow,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -36,7 +34,7 @@ def _make_result_data(
     submitter_id: str = "SV001",
     questions: list[QuestionResultRow] | None = None,
 ) -> AttemptResultData:
-    now = datetime(2026, 3, 24, 10, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 3, 24, 10, 0, 0, tzinfo=UTC)
     if questions is None:
         questions = [
             QuestionResultRow(
@@ -70,7 +68,7 @@ def _make_result_data(
         quiz_title="Bài kiểm tra thử",
         mode=mode,
         started_at=now,
-        submitted_at=datetime(2026, 3, 24, 10, 30, 0, tzinfo=timezone.utc),
+        submitted_at=datetime(2026, 3, 24, 10, 30, 0, tzinfo=UTC),
         duration_seconds=1800,
         score=1.0,
         max_score=3.0,
@@ -235,7 +233,9 @@ class TestSubmissionSettingsDB:
     def session(self, tmp_path):
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
+
         from core.database.models import Base
+
         engine = create_engine(f"sqlite:///{tmp_path}/test.db")
         Base.metadata.create_all(engine)
         factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)

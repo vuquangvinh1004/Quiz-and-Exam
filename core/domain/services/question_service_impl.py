@@ -553,11 +553,13 @@ class QuestionMutationService:
         ):
             if not any(a.strip() for a in data.accepted_answers):
                 raise ValueError("Cần ít nhất một đáp án chấp nhận được.")
-            if data.question_type == QuestionType.BLANK:
-                if count_blank_placeholders(data.content) == 0:
-                    raise ValueError(
-                        f"Câu hỏi BLANK phải chứa ít nhất một {BLANK_PLACEHOLDER} trong nội dung."
-                    )
+            if (
+                data.question_type == QuestionType.BLANK
+                and count_blank_placeholders(data.content) == 0
+            ):
+                raise ValueError(
+                    f"Câu hỏi BLANK phải chứa ít nhất một {BLANK_PLACEHOLDER} trong nội dung."
+                )
         elif data.question_type in CRQ_QUESTION_TYPES:
             QuestionMutationService._validate_crq_rubric(data)
 

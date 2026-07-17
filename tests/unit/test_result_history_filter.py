@@ -11,13 +11,13 @@ Requires: pytest-qt (offscreen via QT_QPA_PLATFORM=offscreen)
 from __future__ import annotations
 
 import os
+
 import pytest
-
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
 from PySide6.QtWidgets import QApplication
 
 from ui.views.result_history_view import ResultHistoryView
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
 # ---------------------------------------------------------------------------
@@ -41,8 +41,9 @@ def view(qapp):
 
 def _sample_attempts():
     """Return 6 dict rows that exercise search / mode / status combinations."""
-    from datetime import datetime, timezone
-    now = datetime(2024, 6, 1, 10, 0, tzinfo=timezone.utc)
+    from datetime import UTC, datetime
+
+    now = datetime(2024, 6, 1, 10, 0, tzinfo=UTC)
     return [
         {"id": 1, "quiz_title": "Toán học", "mode": "EXAM", "status": "SUBMITTED",
          "score": 8.0, "max_score": 10.0, "score_pct": 80.0, "started_at": now},

@@ -6,6 +6,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QDialog, QListWidgetItem, QMessageBox
 
 from core.database.models import Question
+from core.utils.blank_rendering import render_blank_placeholders
 from core.utils.latex_rendering import render_inline_latex_text
 from core.utils.logger import get_logger
 from ui.dialogs.bank_meta_dialog import BankMetaDialog
@@ -77,9 +78,13 @@ class QuestionBankActionsMixin:
         for r, q in enumerate(questions):
             self._q_table.setItem(r, 0, cell(str(r + 1), center=True))
             self._q_table.setItem(r, 1, cell(q.question_code or ""))
-            preview = render_inline_latex_text((q.content or ""))[:180]
+            preview = render_inline_latex_text(
+                render_blank_placeholders(q.content or "")
+            )[:180]
             content_item = cell(preview)
-            content_item.setToolTip(render_inline_latex_text(q.content or ""))
+            content_item.setToolTip(
+                render_inline_latex_text(render_blank_placeholders(q.content or ""))
+            )
             self._q_table.setItem(r, 2, content_item)
             self._q_table.setItem(r, 3, cell(q.category or "", center=True))
             self._q_table.setItem(r, 4, cell(q.learning_outcome_code or "", center=True))

@@ -382,6 +382,19 @@ class TestRender:
         text = _text(doc)
         assert "Trả lời:" in text
 
+    def test_blank_placeholder_is_rendered_as_underscores(self):
+        doc = self._render(
+            questions=[
+                {
+                    **BLANK_Q,
+                    "content": "Thang đo [[blank]]",
+                }
+            ]
+        )
+        text = _text(doc)
+        assert "Thang đo ________" in text
+        assert "[[blank]]" not in text
+
     def test_sa_question_multi_line_space(self):
         doc = self._render(questions=[SA_Q])
         paragraphs_with_lines = [p for p in doc.paragraphs if "_" * 40 in p.text]
@@ -600,8 +613,8 @@ class TestRender:
 
     def test_problem_question_instructions_use_problem_label(self):
         text = _text(self._render(questions=[PROBLEM_Q]))
-        assert "CRQ - Bài toán (Problem)" in text
-        assert "Câu CRQ - Tự luận (Essay)" not in text
+        assert "Câu CRQ - Tự luận (Essay)" in text
+        assert "Câu CRQ - Bài toán (Problem)" not in text
 
     def test_problem_question_answer_lines_match_rubric_rows(self):
         cfg = ExportConfig(
@@ -640,7 +653,8 @@ class TestRender:
         text = _text(doc)
         assert "PHIẾU TRẢ LỜI" in text
         assert "○ A" in text
-        assert "Bài toán kiểm định giả thuyết." in text
+        assert "Phần B. CRQ - Tự luận" in text
+        assert "Giải bài toán kiểm định giả thuyết." in text
         assert text.count("PHIẾU TRẢ LỜI") == 1
 
     def test_common_latex_commands_render_readably(self):

@@ -10,10 +10,7 @@ in normal CI runs with: pytest -m "not slow"
 """
 from __future__ import annotations
 
-import csv
-import io
 import time
-from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
@@ -21,7 +18,6 @@ from sqlalchemy.orm import sessionmaker
 
 from core.database.models import Base, Question, QuestionBank
 from core.domain.services.import_service import ImportService
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

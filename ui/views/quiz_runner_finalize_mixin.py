@@ -1,6 +1,7 @@
 """Submit/finalize workflow mixin for QuizRunnerView."""
 from __future__ import annotations
 
+from modules.grading.result_builder import AttemptResultData
 from modules.quiz_runner.mode_policy import ModePolicy
 from ui.widgets.quiz_result_presenter import QuizResultPresenter
 

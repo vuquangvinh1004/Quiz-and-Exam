@@ -6,10 +6,10 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QListWidget,
-    QHeaderView,
     QSplitter,
     QTableWidget,
     QVBoxLayout,
@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from core.database.models import Question
 from ui.facades.question_bank_facade import QuestionBankFacade
 from ui.views.question_bank_actions_mixin import QuestionBankActionsMixin
-from ui.views.question_bank_shared import _QUESTION_LEVELS, _TYPE_LABEL, _TYPE_TABLE_LABEL
+from ui.views.question_bank_shared import _QUESTION_LEVELS, _TYPE_LABEL
 
 
 class QuestionBankView(QuestionBankActionsMixin, QWidget):

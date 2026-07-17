@@ -1,9 +1,6 @@
 """Unit tests for config/paths.py"""
 from __future__ import annotations
 
-import pytest
-from pathlib import Path
-
 from config.paths import (
     APP_DIR,
     BACKUPS_DIR,
@@ -13,7 +10,6 @@ from config.paths import (
     IMPORTS_DIR,
     LOGS_DIR,
     TEMPLATES_DIR,
-    ensure_data_dirs,
 )
 
 

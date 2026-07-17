@@ -1,20 +1,17 @@
 """Unit tests for SQLAlchemy models (in-memory DB)."""
 from __future__ import annotations
 
-import json
-
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from core.database.models import (
     AppSetting,
     Attempt,
-    AttemptAnswer,
     Question,
     QuestionBank,
     QuestionOption,
     QuestionRubricTemplate,
     Quiz,
-    QuizQuestion,
 )
 from core.utils.constants import AttemptStatus, QuizMode
 
@@ -32,7 +29,7 @@ class TestQuestionBank:
         db_session.add(QuestionBank(name="Unique"))
         db_session.flush()
         db_session.add(QuestionBank(name="Unique"))
-        with pytest.raises(Exception):  # IntegrityError
+        with pytest.raises(IntegrityError):
             db_session.flush()
 
 
@@ -207,5 +204,5 @@ class TestAppSetting:
         db_session.add(AppSetting(setting_key="dup", setting_value="1"))
         db_session.flush()
         db_session.add(AppSetting(setting_key="dup", setting_value="2"))
-        with pytest.raises(Exception):
+        with pytest.raises(IntegrityError):
             db_session.flush()

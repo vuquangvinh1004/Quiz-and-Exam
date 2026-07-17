@@ -1,8 +1,6 @@
 """Unit tests for core/utils/constants.py"""
 from __future__ import annotations
 
-import pytest
-
 from core.utils.constants import (
     BLANK_PLACEHOLDER,
     DEFAULT_DIFFICULTY,
@@ -23,7 +21,7 @@ from core.utils.constants import (
 class TestQuestionType:
     def test_all_types_present(self):
         values = {qt.value for qt in QuestionType}
-        assert values == {"MC", "MA", "BLANK", "TF", "SA", "ES"}
+        assert values == {"MC", "MA", "BLANK", "TF", "SA", "ES", "PR"}
 
     def test_import_map_covers_all_types(self):
         assert set(QUESTION_TYPE_IMPORT_MAP.values()) == set(QuestionType)
@@ -36,6 +34,7 @@ class TestQuestionType:
             "true_false",
             "short_answer",
             "essay",
+            "problem",
         }
         assert set(QUESTION_TYPE_IMPORT_MAP.keys()) == expected_keys
 

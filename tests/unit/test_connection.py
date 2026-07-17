@@ -6,14 +6,12 @@ Covers:
 """
 from __future__ import annotations
 
-from pathlib import Path
 import sqlite3
 
-import pytest
 from sqlalchemy import Engine, inspect, text
 
 from core.database.connection import create_db_engine, init_db
-from core.database.models import Base, QuestionBank
+from core.database.models import QuestionBank
 from core.database.schema_repair import repair_questions_type_constraint
 
 

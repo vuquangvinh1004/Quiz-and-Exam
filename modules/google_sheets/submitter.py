@@ -82,7 +82,7 @@ class GoogleSheetsSubmitter:
 
     def submit(
         self,
-        data: "AttemptResultData",
+        data: AttemptResultData,
         spreadsheet_url: str,
         credentials_path: str,
     ) -> None:
@@ -137,8 +137,8 @@ class GoogleSheetsSubmitter:
                 "Kiểm tra:\n"
                 "  1. URL có đúng không?\n"
                 "  2. Sheet đã được chia sẻ với email của Service Account chưa?\n"
-                f"     (email trong file credentials.json, trường 'client_email')"
-            )
+                "     (email trong file credentials.json, trường 'client_email')"
+            ) from None
 
         # Resolve target worksheet
         ws = self._get_worksheet(sh)
@@ -210,7 +210,7 @@ class GoogleSheetsSubmitter:
             return sh.sheet1
 
     @staticmethod
-    def _build_rows(data: "AttemptResultData") -> list[list]:
+    def _build_rows(data: AttemptResultData) -> list[list]:
         """Convert AttemptResultData into a list of cell rows."""
         ts = data.submitted_at.strftime("%d/%m/%Y %H:%M:%S")
         rows: list[list] = []

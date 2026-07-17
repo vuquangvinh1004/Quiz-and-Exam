@@ -5,16 +5,15 @@ Revises: 7d8f4a1e9c55
 Create Date: 2026-07-15 00:00:00.000000
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
 
-
 # revision identifiers, used by Alembic.
 revision: str = "c4f2d8b1e901"
-down_revision: Union[str, Sequence[str], None] = "7d8f4a1e9c55"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "7d8f4a1e9c55"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -35,4 +34,3 @@ def downgrade() -> None:
             "ck_questions_type",
             "question_type IN ('MC', 'MA', 'BLANK', 'TF', 'SA', 'ES')",
         )
-

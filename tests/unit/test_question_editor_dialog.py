@@ -41,8 +41,8 @@ def test_question_editor_dialog_uses_new_question_fields(monkeypatch, qtbot) -> 
     assert dlg._difficulty_combo.itemText(0) == "Nhớ"
 
     dlg._type_combo.setCurrentIndex(dlg._type_combo.findData("SA"))
-    dlg._difficulty_combo.setCurrentIndex(dlg._difficulty_combo.findData("Sáng tạo"))
-    assert dlg._score_spin.value() == 10.0
+    dlg._difficulty_combo.setCurrentIndex(dlg._difficulty_combo.findData("Đánh giá"))
+    assert dlg._score_spin.value() == 8.0
 
     dlg._score_spin.setValue(7.5)
     assert dlg._score_spin.value() == 7.5

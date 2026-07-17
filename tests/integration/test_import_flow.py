@@ -8,21 +8,16 @@ and that invalid rows do NOT pollute the database.
 """
 from __future__ import annotations
 
-import csv
-import io
 import json
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from core.database.models import Base, Question, QuestionBank, QuestionOption
+from core.database.models import Question, QuestionBank, QuestionOption
 from core.domain.services.import_service import ImportService
-from core.utils.constants import QuestionType
 from core.utils.exceptions import ImportValidationError
 from modules.question_bank.importer import QuestionFileParser
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

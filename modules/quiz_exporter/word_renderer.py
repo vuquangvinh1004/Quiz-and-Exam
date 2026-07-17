@@ -23,15 +23,15 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from docx import Document
 from docx.enum.table import WD_ROW_HEIGHT_RULE
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
-from docx.shared import Pt, Cm, RGBColor, Inches
+from docx.oxml.ns import qn
+from docx.shared import Cm, Inches, Pt, RGBColor
 
+from core.utils.blank_rendering import render_blank_placeholders
 from core.utils.latex_rendering import render_inline_latex_text
 
 # ---------------------------------------------------------------------------
@@ -101,22 +101,22 @@ class ExportQuestionSnapshot:
     hint: str = ""
     explanation: str = ""
     options: list = field(default_factory=list)
-    accepted_answers: Optional[list] = None
+    accepted_answers: list | None = None
     question_variant: str = ""
     question_family: str = ""
     crq_subtype: str = ""
-    crq_rubric: Optional[list] = None
-    crq_template_id: Optional[int] = None
+    crq_rubric: list | None = None
+    crq_template_id: int | None = None
     crq_template_name: str = ""
-    problem_rubric: Optional[list] = None
-    problem_template_id: Optional[int] = None
+    problem_rubric: list | None = None
+    problem_template_id: int | None = None
     problem_template_name: str = ""
     difficulty: str = ""
     learning_outcome_code: str = ""
     category: str = ""
 
     @classmethod
-    def from_dict(cls, data: dict) -> "ExportQuestionSnapshot":
+    def from_dict(cls, data: dict) -> ExportQuestionSnapshot:
         return cls(
             type=data.get("type", "MC"),
             content=data.get("content", ""),
@@ -899,10 +899,8 @@ class WordRenderer:
                 run.underline = True
                 self._apply_paragraph_spacing(p)
 
-            section_counter = 0
-            for q in qs:
+            for section_counter, q in enumerate(qs, start=1):
                 global_counter += 1
-                section_counter += 1
                 num = (
                     global_counter
                     if config.numbering_mode == "global"
@@ -920,7 +918,9 @@ class WordRenderer:
         config: ExportConfig,
     ) -> None:
         qtype = q.get("type", "MC")
-        content = render_inline_latex_text(str(q.get("content", "")))
+        content = render_inline_latex_text(
+            render_blank_placeholders(str(q.get("content", "")))
+        )
         points = q.get("point_value", 1.0)
 
         # Question stem
@@ -1101,7 +1101,7 @@ class WordRenderer:
     # ------------------------------------------------------------------
 
     def _render_scoring_rules(
-        self, doc: Document, questions: list[dict], config: "ExportConfig | None" = None
+        self, doc: Document, questions: list[dict], config: ExportConfig | None = None
     ) -> None:
         types_present = self._types_present(questions)
         if not types_present:

@@ -20,11 +20,9 @@ Normalisation rules applied when trimming/casing flags are set:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from core.utils.constants import MULTI_VALUE_DELIMITER
 from core.utils.validators import count_blank_placeholders
-
 
 # ---------------------------------------------------------------------------
 # Result DTO
@@ -47,7 +45,7 @@ class GradeResult:
         Used in STUDY-mode per-question feedback.
     """
 
-    is_correct: Optional[bool]
+    is_correct: bool | None
     score_awarded: float
     feedback_state: str          # "correct" | "incorrect" | "skipped"
     correct_answer_display: str
@@ -140,10 +138,13 @@ class BlankEvaluator:
                 a.strip() if trim_whitespace else a for a in accepted
             ]
             if case_sensitive:
-                is_correct = all(p == a for p, a in zip(parts, norm_accepted))
+                is_correct = all(
+                    p == a for p, a in zip(parts, norm_accepted, strict=False)
+                )
             else:
                 is_correct = all(
-                    p.lower() == a.lower() for p, a in zip(parts, norm_accepted)
+                    p.lower() == a.lower()
+                    for p, a in zip(parts, norm_accepted, strict=False)
                 )
             return GradeResult(
                 is_correct=is_correct,

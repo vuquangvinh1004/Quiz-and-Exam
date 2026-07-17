@@ -5,9 +5,8 @@ course learning outcome (CLO) defined on its question bank.
 """
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "f2b1c8d4e902"

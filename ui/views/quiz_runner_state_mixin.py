@@ -4,7 +4,8 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 
 from core.domain.services.quiz_service import QuizQuestionSnapshot, QuizService
-from core.utils.constants import BLANK_PLACEHOLDER, QuizMode
+from core.utils.blank_rendering import render_blank_placeholders
+from core.utils.constants import QuizMode
 from modules.quiz_runner.mode_policy import ModePolicy
 from ui.widgets.quiz_result_presenter import QuizResultPresenter
 
@@ -64,8 +65,8 @@ class QuizRunnerStateMixin:
         )
         from html import escape
 
-        safe_content = escape(qq.content).replace(
-            escape(BLANK_PLACEHOLDER),
+        safe_content = escape(render_blank_placeholders(qq.content)).replace(
+            "________",
             '<u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>',
         )
         self._question_label.setText(safe_content)
